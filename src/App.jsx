@@ -19,19 +19,19 @@ const initialData = {
               id: 'religion', title: '宗教', summary: '神祇与信仰', content: '', isFolder: true, linkable: false,
               children: [
                 { id: 'ten-days', title: '十日旧约', summary: '创世传说', linkable: true, isFolder: false,
-                  content: '　　在时间的起点，女神独自漂浮于无尽的寂静之中。\n\n　　第一日，她从心火中分离出【火的守望】。\n　　第二日，从泪水中分离出【水的祝福】。', children: [] },
+                  content: '<p>　　在时间的起点，女神独自漂浮于无尽的寂静之中。</p><p>　　第一日，她从心火中分离出【火的守望】。</p><p>　　第二日，从泪水中分离出【水的祝福】。</p>', children: [] },
                 { id: 'war-gods', title: '战争双神', summary: '胜利与牺牲', linkable: true, isFolder: false,
-                  content: '　　<b>胜利者·凯洛斯</b>，身披金色战甲。\n\n　　<i>牺牲者·赛莲娜</i>，身着银色长袍。', children: [] }
+                  content: '<p>　　<b>胜利者·凯洛斯</b>，身披金色战甲。</p><p>　　<i>牺牲者·赛莲娜</i>，身着银色长袍。</p>', children: [] }
               ]
             },
             {
               id: 'geography', title: '地理', summary: '大陆疆域', content: '', isFolder: true, linkable: false,
               children: [
-                { id: 'koltra', title: '柯尔特拉', summary: '中央王国', linkable: true, isFolder: true, content: '　　位于大陆正中央，被称为"女神的掌心"。', 
+                { id: 'koltra', title: '柯尔特拉', summary: '中央王国', linkable: true, isFolder: true, content: '<p>　　位于大陆正中央，被称为"女神的掌心"。</p>', 
                   children: [
-                    { id: 'silver-city', title: '银冠城', summary: '首都', linkable: true, isFolder: false, content: '　　首都建立在白色岩石上，城中有【千年图书馆】。', children: [] }
+                    { id: 'silver-city', title: '银冠城', summary: '首都', linkable: true, isFolder: false, content: '<p>　　首都建立在白色岩石上，城中有【千年图书馆】。</p>', children: [] }
                   ] },
-                { id: 'northland', title: '北境', summary: '冰雪王国', linkable: true, isFolder: false, content: '　　永恒冬季笼罩的土地，居民是【霜裔】后代。', children: [] }
+                { id: 'northland', title: '北境', summary: '冰雪王国', linkable: true, isFolder: false, content: '<p>　　永恒冬季笼罩的土地，居民是【霜裔】后代。</p>', children: [] }
               ]
             }
           ]
@@ -39,7 +39,7 @@ const initialData = {
         {
           id: 'characters', title: '人物', summary: '故事灵魂', content: '', isFolder: true, linkable: false,
           children: [
-            { id: 'elena', title: '艾琳娜', summary: '流亡公主', linkable: true, isFolder: false, content: '　　【柯尔特拉】末代国王的独生女。在【千年图书馆】长大，对【十日旧约】研究深入。', children: [] }
+            { id: 'elena', title: '艾琳娜', summary: '流亡公主', linkable: true, isFolder: false, content: '<p>　　【柯尔特拉】末代国王的独生女。在【千年图书馆】长大，对【十日旧约】研究深入。</p>', children: [] }
           ]
         }
       ]
@@ -48,7 +48,7 @@ const initialData = {
       id: 'jade-book', title: '玉辞', author: '桐青璃落', tags: ['古风'],
       cover: '🏯', coverImage: null, color: '#4A0E0E', showStats: true,
       entries: [
-        { id: 'jade-chars', title: '人物', summary: '江湖儿女', content: '　　曾有异世旅人【艾琳娜】短暂停留……', isFolder: true, linkable: false, children: [] }
+        { id: 'jade-chars', title: '人物', summary: '江湖儿女', content: '<p>　　曾有异世旅人【艾琳娜】短暂停留……</p>', isFolder: true, linkable: false, children: [] }
       ]
     }
   ]
@@ -165,8 +165,9 @@ const countWords = (entries) => {
   let count = 0;
   const traverse = (items) => items.forEach(item => {
     if (item.content) {
-      const text = item.content.replace(/<[^>]+>/g, '').replace(/\[IMG:[^\]]+\]/g, '');
-      count += text.replace(/\s/g, '').length;
+      const div = document.createElement('div');
+      div.innerHTML = item.content;
+      count += (div.textContent || '').replace(/\s/g, '').length;
     }
     if (item.children?.length) traverse(item.children);
   });
@@ -206,78 +207,6 @@ const compressImage = (file, maxWidth = 600) => {
     };
     reader.readAsDataURL(file);
   });
-};
-
-const addIndentToAll = (text) => {
-  return text.split('\n').map(line => {
-    if (line.trim() && !line.startsWith('　　') && !line.startsWith('[IMG:')) {
-      return '　　' + line;
-    }
-    return line;
-  }).join('\n');
-};
-
-// 编辑模式下将图片显示为[图片]
-const contentForEdit = (content) => {
-  if (!content) return '';
-  return content.replace(/\[IMG:[^\]]+\]/g, '[图片]');
-};
-
-// 保存时将[图片]还原（保持原有图片数据）
-const restoreImages = (newContent, originalContent) => {
-  if (!originalContent) return newContent;
-  const imgMatches = originalContent.match(/\[IMG:[^\]]+\]/g) || [];
-  let imgIndex = 0;
-  return newContent.replace(/\[图片\]/g, () => {
-    return imgMatches[imgIndex++] || '[图片]';
-  });
-};
-
-// ==================== 富文本渲染（阅读模式）====================
-const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, fontFamily, fontSize }) => {
-  const processedContent = useMemo(() => {
-    if (!content) return [];
-    return content.split('\n').map((line, lineIndex) => {
-      if (line.startsWith('[IMG:')) {
-        const imgData = line.slice(5, -1);
-        return <div key={lineIndex} className="content-image"><img src={imgData} alt="" loading="lazy" /></div>;
-      }
-      
-      const parts = [];
-      let key = 0;
-      // 支持HTML标签和【关键词】
-      const regex = /(<b>([^<]+)<\/b>)|(<i>([^<]+)<\/i>)|(<u>([^<]+)<\/u>)|(<s>([^<]+)<\/s>)|(<big>([^<]+)<\/big>)|(<small>([^<]+)<\/small>)|【([^】]+)】/g;
-      let lastIdx = 0, match;
-      
-      while ((match = regex.exec(line)) !== null) {
-        if (match.index > lastIdx) parts.push(<span key={key++}>{line.slice(lastIdx, match.index)}</span>);
-        if (match[1]) parts.push(<strong key={key++}>{match[2]}</strong>);
-        else if (match[3]) parts.push(<em key={key++}>{match[4]}</em>);
-        else if (match[5]) parts.push(<u key={key++}>{match[6]}</u>);
-        else if (match[7]) parts.push(<del key={key++}>{match[8]}</del>);
-        else if (match[9]) parts.push(<span key={key++} style={{ fontSize: '1.2em' }}>{match[10]}</span>);
-        else if (match[11]) parts.push(<span key={key++} style={{ fontSize: '0.85em' }}>{match[12]}</span>);
-        else if (match[13]) {
-          const keyword = match[13];
-          const linkTargets = allTitlesMap.get(keyword);
-          const isLinked = !!linkTargets?.length;
-          parts.push(
-            <span key={key++} className={`keyword ${isLinked ? 'linked clickable' : ''}`}
-              onClick={() => {
-                if (isLinked) {
-                  const target = linkTargets.find(t => t.bookId === currentBookId) || linkTargets[0];
-                  onLinkClick(keyword, target.bookId, target.entry.id);
-                }
-              }}>【{keyword}】</span>
-          );
-        }
-        lastIdx = match.index + match[0].length;
-      }
-      if (lastIdx < line.length) parts.push(<span key={key++}>{line.slice(lastIdx)}</span>);
-      return <p key={lineIndex} className="content-line" style={{ fontFamily, fontSize }}>{parts.length > 0 ? parts : line || '\u00A0'}</p>;
-    });
-  }, [content, allTitlesMap, currentBookId, onLinkClick, fontFamily, fontSize]);
-  return <div className="content-body">{processedContent}</div>;
 };
 
 // ==================== 侧边栏 ====================
@@ -404,21 +333,39 @@ const BookModal = ({ isOpen, onClose, onSave, editingBook }) => {
 };
 
 // ==================== 格式菜单 ====================
-const TextFormatMenu = ({ isOpen, onClose, activeFormats, onToggleFormat }) => {
+const TextFormatMenu = ({ isOpen, onClose, onFormat }) => {
   if (!isOpen) return null;
   return (
     <>
       <div className="format-menu-overlay" onClick={onClose} />
       <div className="format-menu">
         <div className="format-row">
-          <button className={activeFormats.bold ? 'active' : ''} onClick={() => onToggleFormat('bold')} title="加粗"><strong>B</strong></button>
-          <button className={activeFormats.italic ? 'active' : ''} onClick={() => onToggleFormat('italic')} title="斜体"><em>I</em></button>
-          <button className={activeFormats.underline ? 'active' : ''} onClick={() => onToggleFormat('underline')} title="下划线"><u>U</u></button>
-          <button className={activeFormats.strike ? 'active' : ''} onClick={() => onToggleFormat('strike')} title="删除线"><del>S</del></button>
+          <button onClick={() => { onFormat('bold'); }} title="加粗"><strong>B</strong></button>
+          <button onClick={() => { onFormat('italic'); }} title="斜体"><em>I</em></button>
+          <button onClick={() => { onFormat('underline'); }} title="下划线"><u>U</u></button>
+          <button onClick={() => { onFormat('strikeThrough'); }} title="删除线"><del>S</del></button>
         </div>
         <div className="format-row size-row">
-          <button className={activeFormats.small ? 'active' : ''} onClick={() => onToggleFormat('small')} title="小字">小</button>
-          <button className={activeFormats.big ? 'active' : ''} onClick={() => onToggleFormat('big')} title="大字">大</button>
+          <button onClick={() => { onFormat('fontSize', '2'); }}>小</button>
+          <button onClick={() => { onFormat('fontSize', '3'); }}>中</button>
+          <button onClick={() => { onFormat('fontSize', '4'); }}>大</button>
+          <button onClick={() => { onFormat('fontSize', '5'); }}>特大</button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const AlignMenu = ({ isOpen, onClose, onAlign }) => {
+  if (!isOpen) return null;
+  return (
+    <>
+      <div className="format-menu-overlay" onClick={onClose} />
+      <div className="format-menu align-menu">
+        <div className="format-row">
+          <button onClick={() => { onAlign('left'); onClose(); }} title="左对齐">⬅</button>
+          <button onClick={() => { onAlign('center'); onClose(); }} title="居中">⬌</button>
+          <button onClick={() => { onAlign('right'); onClose(); }} title="右对齐">➡</button>
         </div>
       </div>
     </>
@@ -451,13 +398,13 @@ const FontMenu = ({ isOpen, onClose, onSelectFont, currentFont }) => {
 };
 
 // ==================== 编辑工具栏 ====================
-const EditorToolbar = ({ onIndentAll, onFormatClick, onFontClick, onImageUpload, activeFormats }) => {
+const EditorToolbar = ({ onIndentAll, onFormatClick, onFontClick, onAlignClick, onImageUpload }) => {
   const imageInputRef = useRef(null);
-  const hasActiveFormat = activeFormats.bold || activeFormats.italic || activeFormats.underline || activeFormats.strike || activeFormats.big || activeFormats.small;
   return (
     <div className="editor-toolbar-bottom">
       <button onClick={onIndentAll} title="全文缩进">↵</button>
-      <button onClick={onFormatClick} className={hasActiveFormat ? 'has-active' : ''} title="文字格式">A</button>
+      <button onClick={onFormatClick} title="文字格式">A</button>
+      <button onClick={onAlignClick} title="对齐">≡</button>
       <button onClick={onFontClick} title="字体">T</button>
       <button onClick={() => imageInputRef.current?.click()} title="插入图片">🖼</button>
       <input ref={imageInputRef} type="file" accept="image/*" onChange={onImageUpload} style={{ display: 'none' }} />
@@ -480,15 +427,13 @@ const AddMenu = ({ isOpen, onClose, onAddEntry, onAddFolder, onReorderMode }) =>
   );
 };
 
-// ==================== 排序模式列表 ====================
+// ==================== 排序模式 ====================
 const ReorderList = ({ entries, onReorder, onExit }) => {
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const listRef = useRef(null);
-  const dragStartY = useRef(0);
 
   const handleTouchStart = (e, index) => {
-    dragStartY.current = e.touches[0].clientY;
     setDraggingIndex(index);
     if (navigator.vibrate) navigator.vibrate(30);
   };
@@ -499,7 +444,6 @@ const ReorderList = ({ entries, onReorder, onExit }) => {
     const touch = e.touches[0];
     const items = listRef.current?.querySelectorAll('.reorder-item');
     if (!items) return;
-    
     for (let i = 0; i < items.length; i++) {
       const rect = items[i].getBoundingClientRect();
       if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
@@ -526,22 +470,94 @@ const ReorderList = ({ entries, onReorder, onExit }) => {
       <p className="reorder-hint">长按书签拖动调整顺序</p>
       <div className="reorder-list" ref={listRef} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {entries.map((entry, index) => (
-          <div
-            key={entry.id}
-            className={`reorder-item ${draggingIndex === index ? 'dragging' : ''} ${overIndex === index && draggingIndex !== index ? 'over' : ''}`}
-            onTouchStart={(e) => handleTouchStart(e, index)}
-          >
+          <div key={entry.id} className={`reorder-item ${draggingIndex === index ? 'dragging' : ''} ${overIndex === index && draggingIndex !== index ? 'over' : ''}`} onTouchStart={(e) => handleTouchStart(e, index)}>
             <div className="reorder-content">
               <span className="reorder-icon">{entry.isFolder ? '📁' : '📄'}</span>
               <span className="reorder-title">{entry.title}</span>
             </div>
-            <div className="bookmark-tab">
-              <span>≡</span>
-            </div>
+            <div className="bookmark-tab"><span>≡</span></div>
           </div>
         ))}
       </div>
     </div>
+  );
+};
+
+// ==================== 富文本阅读渲染 ====================
+const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, fontFamily }) => {
+  const containerRef = useRef(null);
+  
+  useEffect(() => {
+    if (!containerRef.current || !content) return;
+    // 处理关键词链接
+    const processKeywords = (html) => {
+      return html.replace(/【([^】]+)】/g, (match, keyword) => {
+        const linkTargets = allTitlesMap.get(keyword);
+        if (linkTargets?.length) {
+          return `<span class="keyword linked clickable" data-keyword="${keyword}">【${keyword}】</span>`;
+        }
+        return `<span class="keyword">【${keyword}】</span>`;
+      });
+    };
+    containerRef.current.innerHTML = processKeywords(content);
+    
+    // 绑定点击事件
+    containerRef.current.querySelectorAll('.keyword.clickable').forEach(el => {
+      el.onclick = () => {
+        const keyword = el.dataset.keyword;
+        const linkTargets = allTitlesMap.get(keyword);
+        if (linkTargets?.length) {
+          const target = linkTargets.find(t => t.bookId === currentBookId) || linkTargets[0];
+          onLinkClick(keyword, target.bookId, target.entry.id);
+        }
+      };
+    });
+  }, [content, allTitlesMap, currentBookId, onLinkClick]);
+
+  return <div ref={containerRef} className="content-body" style={{ fontFamily }} />;
+};
+
+// ==================== 富文本编辑器 ====================
+const RichEditor = ({ content, onChange, fontFamily, onSave }) => {
+  const editorRef = useRef(null);
+  const saveTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (editorRef.current && content !== undefined) {
+      // 只在内容不同时更新，避免光标跳动
+      if (editorRef.current.innerHTML !== content) {
+        editorRef.current.innerHTML = content || '<p><br></p>';
+      }
+    }
+  }, [content]);
+
+  const handleInput = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (editorRef.current) {
+        const html = editorRef.current.innerHTML;
+        onChange(html);
+        onSave(html);
+      }
+    }, 300);
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  };
+
+  return (
+    <div
+      ref={editorRef}
+      className="rich-editor"
+      contentEditable
+      onInput={handleInput}
+      onPaste={handlePaste}
+      style={{ fontFamily }}
+      suppressContentEditableWarning
+    />
   );
 };
 
@@ -556,7 +572,6 @@ export default function App() {
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [navigationStack, setNavigationStack] = useState([]);
   const [editContent, setEditContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
   const [mergedContents, setMergedContents] = useState([]);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showBookModal, setShowBookModal] = useState(false);
@@ -568,32 +583,18 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false });
   const [jumpHistory, setJumpHistory] = useState([]);
   const [slideAnimation, setSlideAnimation] = useState('');
+  const [pageFlipAnimation, setPageFlipAnimation] = useState('');
   const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [currentFont, setCurrentFont] = useState("'Noto Serif SC', serif");
-  const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, strike: false, big: false, small: false });
   const [isReorderMode, setIsReorderMode] = useState(false);
   const longPressTimer = useRef(null);
-  const editorRef = useRef(null);
-  const autoSaveTimer = useRef(null);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
   useEffect(() => { saveToStorage(data); }, [data]);
   
-  // 实时保存
-  useEffect(() => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    if (!isReadOnly && currentEntry && viewMode === 'single') {
-      autoSaveTimer.current = setTimeout(() => {
-        const restoredContent = restoreImages(editContent, originalContent);
-        const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: restoredContent });
-        setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
-      }, 500);
-    }
-    return () => clearTimeout(autoSaveTimer.current);
-  }, [editContent, isReadOnly, currentEntry, viewMode]);
-
   const allTitlesMap = useMemo(() => collectAllLinkableTitles(data.books), [data.books]);
   
   useEffect(() => { 
@@ -615,6 +616,13 @@ export default function App() {
     const items = getAllChildContent(entry, currentBook.entries);
     setMergedContents(items.map(item => ({ id: item.id, title: item.title, content: item.content || '', isNew: false })));
   }, [currentBook]);
+
+  // 保存单个词条内容
+  const saveEntryContent = useCallback((html) => {
+    if (!currentEntry || !currentBook) return;
+    const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: html });
+    setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
+  }, [currentEntry, currentBook]);
 
   // 长按
   const handleLongPressStart = (e, type, item) => {
@@ -647,11 +655,30 @@ export default function App() {
   };
   const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
 
-  const handleBookSelect = (book) => { setCurrentBook(book); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); };
+  // 书架进入书籍（翻页动画）
+  const handleBookSelect = (book) => { 
+    setPageFlipAnimation('page-flip-in');
+    setTimeout(() => {
+      setCurrentBook(book); 
+      setCurrentEntry(null); 
+      setViewMode('list'); 
+      setNavigationStack([]);
+      setPageFlipAnimation('');
+    }, 400);
+  };
   
   const handleBackToShelf = () => {
-    setSlideAnimation('slide-out');
-    setTimeout(() => { setCurrentBook(null); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); setIsSidebarOpen(false); setJumpHistory([]); setSlideAnimation(''); setIsReorderMode(false); }, 200);
+    setPageFlipAnimation('page-flip-out');
+    setTimeout(() => { 
+      setCurrentBook(null); 
+      setCurrentEntry(null); 
+      setViewMode('list'); 
+      setNavigationStack([]); 
+      setIsSidebarOpen(false); 
+      setJumpHistory([]); 
+      setIsReorderMode(false);
+      setPageFlipAnimation('');
+    }, 400);
   };
 
   const handleEntryClick = (entry) => {
@@ -661,8 +688,7 @@ export default function App() {
     if (entry.isFolder || entry.children?.length > 0) setViewMode('list');
     else { 
       setViewMode('single'); 
-      setOriginalContent(entry.content || '');
-      setEditContent(contentForEdit(entry.content || '')); 
+      setEditContent(entry.content || ''); 
       setIsReadOnly(true); 
     }
     setTimeout(() => setSlideAnimation(''), 250);
@@ -692,10 +718,7 @@ export default function App() {
         setNavigationStack(last.navStack); 
         setCurrentEntry(last.entry); 
         setViewMode(last.viewMode); 
-        if (last.entry?.content) {
-          setOriginalContent(last.entry.content);
-          setEditContent(contentForEdit(last.entry.content));
-        }
+        if (last.entry?.content) setEditContent(last.entry.content);
       }
     }
   };
@@ -708,8 +731,7 @@ export default function App() {
       if (entry.isFolder || entry.children?.length > 0) setViewMode('list');
       else { 
         setViewMode('single'); 
-        setOriginalContent(entry.content || '');
-        setEditContent(contentForEdit(entry.content || '')); 
+        setEditContent(entry.content || ''); 
       }
     }
     setIsSidebarOpen(false);
@@ -733,8 +755,7 @@ export default function App() {
           setViewMode('list');
         } else { 
           setViewMode('single'); 
-          setOriginalContent(targetEntry.content || '');
-          setEditContent(contentForEdit(targetEntry.content || '')); 
+          setEditContent(targetEntry.content || ''); 
         }
       }
       setTimeout(() => setSlideAnimation(''), 250);
@@ -755,16 +776,15 @@ export default function App() {
     setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
   }, [currentEntry, currentBook, mergedContents]);
 
-  useEffect(() => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    if (!isReadOnly && viewMode === 'merged') {
-      autoSaveTimer.current = setTimeout(handleSaveMergedContent, 500);
-    }
-    return () => clearTimeout(autoSaveTimer.current);
-  }, [mergedContents, isReadOnly, viewMode, handleSaveMergedContent]);
-
   const handleMergedContentChange = (index, field, value) => {
-    setMergedContents(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+    const newContents = mergedContents.map((item, i) => i === index ? { ...item, [field]: value } : item);
+    setMergedContents(newContents);
+    // 立即保存
+    if (!newContents[index].isNew) {
+      const item = newContents[index];
+      const updatedEntries = updateEntryInTree(currentBook.entries, item.id, { [field]: value });
+      setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
+    }
   };
 
   const handleAddMergedEntry = () => {
@@ -801,68 +821,50 @@ export default function App() {
     setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
   };
 
-  const handleToggleFormat = (type) => {
-    setActiveFormats(prev => {
-      const newFormats = { ...prev };
-      // 大小字互斥
-      if (type === 'big' && !prev.big) newFormats.small = false;
-      if (type === 'small' && !prev.small) newFormats.big = false;
-      newFormats[type] = !prev[type];
-      return newFormats;
-    });
+  // 富文本格式命令
+  const handleFormat = (command, value = null) => {
+    document.execCommand(command, false, value);
   };
 
-  // 输入时应用格式
-  const handleEditorChange = (e) => {
-    const newValue = e.target.value;
-    const oldValue = editContent;
-    
-    // 检测是否是新输入的字符
-    if (newValue.length > oldValue.length) {
-      const diff = newValue.length - oldValue.length;
-      const insertPos = e.target.selectionStart - diff;
-      const insertedText = newValue.slice(insertPos, insertPos + diff);
-      
-      // 应用激活的格式
-      if (Object.values(activeFormats).some(v => v)) {
-        let formattedText = insertedText;
-        if (activeFormats.bold) formattedText = `<b>${formattedText}</b>`;
-        if (activeFormats.italic) formattedText = `<i>${formattedText}</i>`;
-        if (activeFormats.underline) formattedText = `<u>${formattedText}</u>`;
-        if (activeFormats.strike) formattedText = `<s>${formattedText}</s>`;
-        if (activeFormats.big) formattedText = `<big>${formattedText}</big>`;
-        if (activeFormats.small) formattedText = `<small>${formattedText}</small>`;
-        
-        const newContent = oldValue.slice(0, insertPos) + formattedText + oldValue.slice(insertPos);
-        setEditContent(newContent);
-        
-        // 调整光标位置
-        setTimeout(() => {
-          if (editorRef.current) {
-            const newPos = insertPos + formattedText.length;
-            editorRef.current.setSelectionRange(newPos, newPos);
-          }
-        }, 0);
-        return;
-      }
-    }
-    
-    setEditContent(newValue);
+  // 对齐
+  const handleAlign = (align) => {
+    document.execCommand('justify' + align.charAt(0).toUpperCase() + align.slice(1), false, null);
   };
 
+  // 全文缩进
   const handleIndentAll = () => {
-    setEditContent(addIndentToAll(editContent));
+    const editor = document.querySelector('.rich-editor');
+    if (!editor) return;
+    const paragraphs = editor.querySelectorAll('p, div');
+    paragraphs.forEach(p => {
+      const text = p.textContent;
+      if (text && !text.startsWith('　　')) {
+        p.textContent = '　　' + text;
+      }
+    });
+    // 触发保存
+    const html = editor.innerHTML;
+    setEditContent(html);
+    saveEntryContent(html);
   };
 
+  // 插入图片
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
       try {
         const compressed = await compressImage(file, 600);
-        const imgTag = `[IMG:${compressed}]`;
-        const newOriginal = originalContent + `\n${imgTag}\n`;
-        setOriginalContent(newOriginal);
-        setEditContent(editContent + '\n[图片]\n');
+        const imgHtml = `<p style="text-align:center"><img src="${compressed}" style="max-width:100%;border-radius:8px" /></p>`;
+        document.execCommand('insertHTML', false, imgHtml);
+        // 触发保存
+        setTimeout(() => {
+          const editor = document.querySelector('.rich-editor');
+          if (editor) {
+            const html = editor.innerHTML;
+            setEditContent(html);
+            saveEntryContent(html);
+          }
+        }, 100);
       } catch (err) {
         console.error('图片处理失败:', err);
       }
@@ -878,16 +880,14 @@ export default function App() {
     if (deltaX > 80 && deltaY < 50 && (currentEntry || navigationStack.length > 0)) handleBack();
   };
 
-  // 词条左滑进入合并视图
+  // 词条左滑
   const handleEntrySwipe = (entry, deltaX) => {
     if (deltaX < -80 && (entry.isFolder || entry.children?.length > 0)) {
       setSlideAnimation('slide-in');
       setNavigationStack(prev => [...prev, currentEntry].filter(Boolean));
       setCurrentEntry(entry);
       setViewMode('merged');
-      setTimeout(() => {
-        initMergedContents(entry);
-      }, 50);
+      setTimeout(() => initMergedContents(entry), 50);
       setTimeout(() => setSlideAnimation(''), 250);
     }
   };
@@ -898,7 +898,7 @@ export default function App() {
   // ==================== 书架 ====================
   if (!currentBook) {
     return (
-      <div className="app bookshelf-view">
+      <div className={`app bookshelf-view ${pageFlipAnimation}`}>
         <header className="bookshelf-header">
           <h1>灵感穹顶</h1>
           <p className="subtitle">拾起每一颗星星</p>
@@ -932,7 +932,7 @@ export default function App() {
 
   // ==================== 主视图 ====================
   return (
-    <div className="app main-view">
+    <div className={`app main-view ${pageFlipAnimation}`}>
       <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header"><h2>{currentBook.title}</h2><button className="close-sidebar" onClick={() => setIsSidebarOpen(false)}>×</button></div>
         <div className="sidebar-content">{currentBook.entries.map(entry => <SidebarItem key={entry.id} entry={entry} onSelect={handleSidebarSelect} currentId={currentEntry?.id} expandedIds={expandedIds} onToggle={id => setExpandedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />)}</div>
@@ -980,14 +980,10 @@ export default function App() {
                 {currentEntries.map((entry) => {
                   let touchX = 0;
                   return (
-                    <div
-                      key={entry.id}
-                      className="entry-card"
-                      onClick={() => handleEntryClick(entry)}
+                    <div key={entry.id} className="entry-card" onClick={() => handleEntryClick(entry)}
                       onTouchStart={(e) => { touchX = e.touches[0].clientX; handleLongPressStart(e, 'entry', entry); }}
                       onTouchMove={handleLongPressEnd}
-                      onTouchEnd={(e) => { handleLongPressEnd(); const dx = e.changedTouches[0].clientX - touchX; handleEntrySwipe(entry, dx); }}
-                    >
+                      onTouchEnd={(e) => { handleLongPressEnd(); const dx = e.changedTouches[0].clientX - touchX; handleEntrySwipe(entry, dx); }}>
                       <div className="entry-icon">{entry.isFolder ? '📁' : '📄'}</div>
                       <div className="entry-info">
                         <h3>{entry.title}{entry.linkable && <span className="star-badge">⭐</span>}</h3>
@@ -1013,16 +1009,9 @@ export default function App() {
                 {!isReadOnly && <button className="edit-meta-btn" onClick={() => { setEditingEntry(currentEntry); setShowEntryModal(true); }}>✏️</button>}
               </div>
               {isReadOnly ? (
-                <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} fontSize="16px" />
+                <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} />
               ) : (
-                <textarea 
-                  ref={editorRef} 
-                  className="content-editor full" 
-                  value={editContent} 
-                  onChange={handleEditorChange} 
-                  placeholder="开始书写..." 
-                  style={{ fontFamily: currentFont }}
-                />
+                <RichEditor content={editContent} onChange={setEditContent} fontFamily={currentFont} onSave={saveEntryContent} />
               )}
             </div>
           )}
@@ -1035,7 +1024,7 @@ export default function App() {
                   {getAllChildContent(currentEntry, currentBook.entries).map((item, idx, arr) => (
                     <div key={item.id} className="merged-section">
                       <div className="section-title" onClick={() => handleSidebarSelect(item)}><span className="section-bullet">•</span>{item.title}</div>
-                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} fontSize="16px" />
+                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} />
                       {idx < arr.length - 1 && <div className="section-divider" />}
                     </div>
                   ))}
@@ -1049,12 +1038,12 @@ export default function App() {
                         <input type="text" value={item.title} onChange={e => handleMergedContentChange(idx, 'title', e.target.value)} className="merged-title-input" />
                         {item.isNew && <span className="new-badge">新</span>}
                       </div>
-                      <textarea 
-                        value={item.content} 
-                        onChange={e => handleMergedContentChange(idx, 'content', e.target.value)} 
-                        className="merged-content-textarea" 
+                      <div 
+                        className="merged-rich-editor"
+                        contentEditable 
+                        dangerouslySetInnerHTML={{ __html: item.content }}
+                        onBlur={e => handleMergedContentChange(idx, 'content', e.target.innerHTML)}
                         style={{ fontFamily: currentFont }}
-                        placeholder="内容..."
                       />
                     </div>
                   ))}
@@ -1072,8 +1061,9 @@ export default function App() {
           </>
         )}
         
-        {isEditing && <EditorToolbar onIndentAll={handleIndentAll} onFormatClick={() => setShowFormatMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} activeFormats={activeFormats} />}
-        <TextFormatMenu isOpen={showFormatMenu} onClose={() => setShowFormatMenu(false)} activeFormats={activeFormats} onToggleFormat={handleToggleFormat} />
+        {isEditing && <EditorToolbar onIndentAll={handleIndentAll} onFormatClick={() => setShowFormatMenu(true)} onAlignClick={() => setShowAlignMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} />}
+        <TextFormatMenu isOpen={showFormatMenu} onClose={() => setShowFormatMenu(false)} onFormat={handleFormat} />
+        <AlignMenu isOpen={showAlignMenu} onClose={() => setShowAlignMenu(false)} onAlign={handleAlign} />
         <FontMenu isOpen={showFontMenu} onClose={() => setShowFontMenu(false)} onSelectFont={setCurrentFont} currentFont={currentFont} />
       </div>
       
@@ -1090,6 +1080,19 @@ const styles = `
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body,#root{height:100%;overflow:hidden}
 .app{height:100%;font-family:'Noto Serif SC',serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
+
+/* 翻页动画 */
+.page-flip-in{animation:pageFlipIn .4s ease-out}
+.page-flip-out{animation:pageFlipOut .4s ease-in}
+@keyframes pageFlipIn{
+  0%{transform:perspective(1000px) rotateY(-90deg);transform-origin:right center;opacity:0}
+  100%{transform:perspective(1000px) rotateY(0);transform-origin:right center;opacity:1}
+}
+@keyframes pageFlipOut{
+  0%{transform:perspective(1000px) rotateY(0);transform-origin:left center;opacity:1}
+  100%{transform:perspective(1000px) rotateY(90deg);transform-origin:left center;opacity:0}
+}
+
 .bookshelf-view{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f0f23 100%);padding:60px 20px;min-height:100%}
 .bookshelf-header{text-align:center;margin-bottom:50px}
 .bookshelf-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:2.5rem;color:#f4e4c1;letter-spacing:.3em;text-shadow:0 0 40px rgba(244,228,193,.3);margin-bottom:16px}
@@ -1170,16 +1173,15 @@ html,body,#root{height:100%;overflow:hidden}
 .edit-meta-btn{background:none;border:1px solid #ddd;padding:6px 12px;border-radius:6px;font-size:.8rem;color:#666;cursor:pointer}
 .merged-header{text-align:center;display:block}
 .merged-hint{color:#8B7355;font-size:.85rem;margin-top:6px}
-.content-body{line-height:1.9;color:#333}
-.content-line{margin-bottom:.4em;text-align:justify}
-.content-image{margin:16px 0}
-.content-image img{max-width:100%;border-radius:8px;max-height:300px;object-fit:contain}
+.content-body{line-height:1.9;color:#333;font-size:16px}
+.content-body p{margin-bottom:.5em;text-align:justify}
+.content-body img{max-width:100%;border-radius:8px;display:block;margin:16px auto}
 .keyword{color:#2D3047;font-weight:600}
-.keyword.linked{color:#8B7355;background:linear-gradient(180deg,transparent 60%,rgba(139,115,85,.2) 60%)}
-.keyword.clickable{cursor:pointer}
-.content-editor{width:100%;min-height:50vh;padding:0;border:none;font-family:'Noto Serif SC',serif;font-size:16px;line-height:1.9;resize:none;background:transparent}
-.content-editor:focus{outline:none}
-.content-editor.full{min-height:calc(100vh - 280px)}
+.keyword.linked{color:#8B7355;background:linear-gradient(180deg,transparent 60%,rgba(139,115,85,.2) 60%);cursor:pointer}
+.rich-editor{min-height:50vh;line-height:1.9;font-size:16px;outline:none;color:#333}
+.rich-editor:empty:before{content:'开始书写...';color:#999}
+.rich-editor p{margin-bottom:.5em}
+.rich-editor img{max-width:100%;border-radius:8px;display:block;margin:16px auto}
 .merged-content-read .merged-section{margin-bottom:32px}
 .section-title{font-size:1.1rem;color:#2D3047;font-weight:600;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:8px}
 .section-bullet{font-size:1.5rem;color:#8B7355}
@@ -1190,8 +1192,8 @@ html,body,#root{height:100%;overflow:hidden}
 .merged-title-input{flex:1;background:none;border:none;font-size:1.1rem;font-weight:600;color:#2D3047;padding:4px 0;font-family:'Noto Serif SC',serif}
 .merged-title-input:focus{outline:none}
 .new-badge{font-size:.7rem;background:#8B7355;color:#fff;padding:2px 6px;border-radius:4px}
-.merged-content-textarea{width:100%;min-height:100px;padding:0;border:none;font-family:'Noto Serif SC',serif;font-size:16px;line-height:1.8;resize:none;background:transparent}
-.merged-content-textarea:focus{outline:none}
+.merged-rich-editor{min-height:80px;line-height:1.8;font-size:16px;outline:none;color:#333}
+.merged-rich-editor:empty:before{content:'内容...';color:#999}
 .add-merged-entry-btn{background:none;border:1px dashed rgba(45,48,71,.2);border-radius:8px;padding:12px;color:#8B7355;font-size:.9rem;cursor:pointer}
 .add-merged-entry-btn:active{background:rgba(139,115,85,.05)}
 .fab{position:fixed;right:24px;bottom:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2D3047,#1a1a2e);border:none;color:#f4e4c1;font-size:1.8rem;cursor:pointer;box-shadow:0 4px 20px rgba(45,48,71,.4);display:flex;align-items:center;justify-content:center;z-index:50}
@@ -1204,17 +1206,16 @@ html,body,#root{height:100%;overflow:hidden}
 .add-menu-item:active{background:#f5f5f5}
 .add-menu-item:not(:last-child){border-bottom:1px solid #eee}
 .editor-toolbar-bottom{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;padding:8px 16px;background:rgba(250,248,243,.98);border-top:1px solid rgba(45,48,71,.08);z-index:50}
-.editor-toolbar-bottom button{background:none;border:none;font-size:1rem;padding:8px 16px;cursor:pointer;color:#2D3047;border-radius:6px}
+.editor-toolbar-bottom button{background:none;border:none;font-size:1rem;padding:8px 14px;cursor:pointer;color:#2D3047;border-radius:6px}
 .editor-toolbar-bottom button:active{background:rgba(45,48,71,.08)}
-.editor-toolbar-bottom button.has-active{color:#8B7355;font-weight:bold}
 .format-menu-overlay{position:fixed;inset:0;z-index:58}
 .format-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:12px}
 .format-row{display:flex;justify-content:space-around;margin-bottom:8px}
 .format-row:last-child{margin-bottom:0}
 .format-row button{width:44px;height:44px;border-radius:10px;border:1px solid #eee;background:#fff;font-size:1rem;cursor:pointer}
-.format-row button:active{background:#f5f5f5}
-.format-row button.active{background:#8B7355;color:#fff;border-color:#8B7355}
-.size-row button{width:auto;padding:0 16px}
+.format-row button:active{background:rgba(139,115,85,.15)}
+.size-row button{width:auto;padding:0 14px}
+.align-menu .format-row button{font-size:1.2rem}
 .font-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:16px}
 .font-section-title{font-size:.8rem;color:#999;margin-bottom:12px}
 .font-options{display:flex;flex-wrap:wrap;gap:8px}
