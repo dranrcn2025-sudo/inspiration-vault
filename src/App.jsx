@@ -27,13 +27,11 @@ const initialData = {
             {
               id: 'geography', title: '地理', summary: '大陆疆域', content: '', isFolder: true, linkable: false,
               children: [
-                { id: 'koltra', title: '柯尔特拉', summary: '中央王国', linkable: true, isFolder: true,
-                  content: '　　位于大陆正中央，被称为"女神的掌心"。', 
+                { id: 'koltra', title: '柯尔特拉', summary: '中央王国', linkable: true, isFolder: true, content: '　　位于大陆正中央，被称为"女神的掌心"。', 
                   children: [
                     { id: 'silver-city', title: '银冠城', summary: '首都', linkable: true, isFolder: false, content: '　　首都建立在白色岩石上，城中有【千年图书馆】。', children: [] }
                   ] },
-                { id: 'northland', title: '北境', summary: '冰雪王国', linkable: true, isFolder: false,
-                  content: '　　永恒冬季笼罩的土地，居民是【霜裔】后代。', children: [] }
+                { id: 'northland', title: '北境', summary: '冰雪王国', linkable: true, isFolder: false, content: '　　永恒冬季笼罩的土地，居民是【霜裔】后代。', children: [] }
               ]
             }
           ]
@@ -41,8 +39,7 @@ const initialData = {
         {
           id: 'characters', title: '人物', summary: '故事灵魂', content: '', isFolder: true, linkable: false,
           children: [
-            { id: 'elena', title: '艾琳娜', summary: '流亡公主', linkable: true, isFolder: false,
-              content: '　　【柯尔特拉】末代国王的独生女。在【千年图书馆】长大，对【十日旧约】研究深入。', children: [] }
+            { id: 'elena', title: '艾琳娜', summary: '流亡公主', linkable: true, isFolder: false, content: '　　【柯尔特拉】末代国王的独生女。在【千年图书馆】长大，对【十日旧约】研究深入。', children: [] }
           ]
         }
       ]
@@ -132,6 +129,25 @@ const deleteEntryFromTree = (entries, entryId) => {
   });
 };
 
+const reorderEntries = (entries, parentId, fromIndex, toIndex) => {
+  if (!parentId) {
+    const newEntries = [...entries];
+    const [moved] = newEntries.splice(fromIndex, 1);
+    newEntries.splice(toIndex, 0, moved);
+    return newEntries;
+  }
+  return entries.map(entry => {
+    if (entry.id === parentId) {
+      const newChildren = [...entry.children];
+      const [moved] = newChildren.splice(fromIndex, 1);
+      newChildren.splice(toIndex, 0, moved);
+      return { ...entry, children: newChildren };
+    }
+    if (entry.children?.length) return { ...entry, children: reorderEntries(entry.children, parentId, fromIndex, toIndex) };
+    return entry;
+  });
+};
+
 const countWords = (entries) => {
   let count = 0;
   const traverse = (items) => items.forEach(item => {
@@ -152,14 +168,49 @@ const countEntries = (entries) => {
   return count;
 };
 
+// 压缩图片
+const compressImage = (file, maxWidth = 800) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+// 一键段首缩进
+const addIndentToAll = (text) => {
+  return text.split('\n').map(line => {
+    if (line.trim() && !line.startsWith('　　') && !line.startsWith('[IMG:')) {
+      return '　　' + line;
+    }
+    return line;
+  }).join('\n');
+};
+
 // ==================== 富文本渲染 ====================
-const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily }) => {
+const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily, fontSize }) => {
   const processedContent = useMemo(() => {
     if (!content) return [];
     return content.split('\n').map((line, lineIndex) => {
       if (line.startsWith('[IMG:')) {
         const imgData = line.slice(5, -1);
-        return <div key={lineIndex} className="content-image"><img src={imgData} alt="" /></div>;
+        return <div key={lineIndex} className="content-image"><img src={imgData} alt="" loading="lazy" /></div>;
       }
       
       const parts = [];
@@ -190,9 +241,9 @@ const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, is
         lastIdx = match.index + match[0].length;
       }
       if (lastIdx < line.length) parts.push(<span key={key++}>{line.slice(lastIdx)}</span>);
-      return <p key={lineIndex} className="content-line" style={{ fontFamily }}>{parts.length > 0 ? parts : line || '\u00A0'}</p>;
+      return <p key={lineIndex} className="content-line" style={{ fontFamily, fontSize }}>{parts.length > 0 ? parts : line || '\u00A0'}</p>;
     });
-  }, [content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily]);
+  }, [content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily, fontSize]);
   return <div className="content-body">{processedContent}</div>;
 };
 
@@ -308,7 +359,7 @@ const BookModal = ({ isOpen, onClose, onSave, editingBook }) => {
             <div className="emoji-picker">{emojis.map(e => <span key={e} className={`emoji-option ${emoji === e ? 'selected' : ''}`} onClick={() => setEmoji(e)}>{e}</span>)}</div>
           )}
           <button className="upload-cover-btn" onClick={() => fileInputRef.current?.click()}>📷 上传封面</button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = ev => setCoverImage(ev.target.result); r.readAsDataURL(f); } }} style={{ display: 'none' }} />
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={async e => { const f = e.target.files[0]; if (f) { const compressed = await compressImage(f, 400); setCoverImage(compressed); } }} style={{ display: 'none' }} />
         </div>
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>取消</button>
@@ -337,7 +388,7 @@ const TextFormatMenu = ({ isOpen, onClose, onFormat }) => {
   );
 };
 
-const FontMenu = ({ isOpen, onClose, onSelect, currentFont }) => {
+const FontMenu = ({ isOpen, onClose, onSelectFont, onSelectSize, currentFont, currentSize }) => {
   const fonts = [
     { name: '默认', value: "'Noto Serif SC', serif" },
     { name: '宋体', value: "'Songti SC', 'SimSun', serif" },
@@ -345,28 +396,48 @@ const FontMenu = ({ isOpen, onClose, onSelect, currentFont }) => {
     { name: '楷体', value: "'Kaiti SC', 'KaiTi', serif" },
     { name: '仿宋', value: "'FangSong SC', 'FangSong', serif" },
   ];
+  const sizes = [
+    { name: '小', value: '14px' },
+    { name: '中', value: '16px' },
+    { name: '大', value: '18px' },
+    { name: '特大', value: '20px' },
+  ];
   if (!isOpen) return null;
   return (
     <>
       <div className="format-menu-overlay" onClick={onClose} />
       <div className="font-menu">
-        {fonts.map(f => (
-          <div key={f.value} className={`font-item ${currentFont === f.value ? 'active' : ''}`} 
-            onClick={() => { onSelect(f.value); onClose(); }} style={{ fontFamily: f.value }}>{f.name}</div>
-        ))}
+        <div className="font-section">
+          <p className="font-section-title">字体</p>
+          <div className="font-options">
+            {fonts.map(f => (
+              <div key={f.value} className={`font-item ${currentFont === f.value ? 'active' : ''}`} 
+                onClick={() => { onSelectFont(f.value); }} style={{ fontFamily: f.value }}>{f.name}</div>
+            ))}
+          </div>
+        </div>
+        <div className="font-section">
+          <p className="font-section-title">字号</p>
+          <div className="size-options">
+            {sizes.map(s => (
+              <button key={s.value} className={`size-btn ${currentSize === s.value ? 'active' : ''}`}
+                onClick={() => { onSelectSize(s.value); }}>{s.name}</button>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );
 };
 
-// ==================== 编辑工具栏 ====================
-const EditorToolbar = ({ onBullet, onFormatClick, onFontClick, onImageUpload }) => {
+// ==================== 编辑工具栏（紧凑版） ====================
+const EditorToolbar = ({ onIndentAll, onFormatClick, onFontClick, onImageUpload, keyboardHeight }) => {
   const imageInputRef = useRef(null);
   return (
-    <div className="editor-toolbar-bottom">
-      <button onClick={onBullet} title="新建子词条">·</button>
+    <div className="editor-toolbar-bottom" style={{ bottom: keyboardHeight }}>
+      <button onClick={onIndentAll} title="全文缩进">↵</button>
       <button onClick={onFormatClick} title="文字格式">A</button>
-      <button onClick={onFontClick} title="字体">T</button>
+      <button onClick={onFontClick} title="字体字号">T</button>
       <button onClick={() => imageInputRef.current?.click()} title="插入图片">🖼</button>
       <input ref={imageInputRef} type="file" accept="image/*" onChange={onImageUpload} style={{ display: 'none' }} />
     </div>
@@ -384,6 +455,94 @@ const AddMenu = ({ isOpen, onClose, onAddEntry, onAddFolder }) => {
         <div className="add-menu-item" onClick={() => { onAddEntry(); onClose(); }}><span>📄</span><span>新建词条</span></div>
       </div>
     </>
+  );
+};
+
+// ==================== 可拖拽词条列表 ====================
+const DraggableEntryList = ({ entries, onEntryClick, onLongPress, onReorder, currentEntry }) => {
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const dragStartY = useRef(0);
+  const dragStartIndex = useRef(0);
+  const longPressTimer = useRef(null);
+  const isDragging = useRef(false);
+
+  const handleTouchStart = (e, entry, index) => {
+    dragStartY.current = e.touches[0].clientY;
+    dragStartIndex.current = index;
+    
+    longPressTimer.current = setTimeout(() => {
+      isDragging.current = true;
+      setDraggingId(entry.id);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 500);
+  };
+
+  const handleTouchMove = (e, index) => {
+    if (!isDragging.current) {
+      const deltaY = Math.abs(e.touches[0].clientY - dragStartY.current);
+      if (deltaY > 10) {
+        clearTimeout(longPressTimer.current);
+      }
+      return;
+    }
+    
+    e.preventDefault();
+    const touch = e.touches[0];
+    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
+    const entryCard = elements.find(el => el.classList.contains('entry-card'));
+    if (entryCard) {
+      const entryId = entryCard.dataset.entryId;
+      if (entryId && entryId !== draggingId) {
+        setDragOverId(entryId);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e, entry, index) => {
+    clearTimeout(longPressTimer.current);
+    
+    if (isDragging.current && dragOverId) {
+      const toIndex = entries.findIndex(en => en.id === dragOverId);
+      if (toIndex !== -1 && toIndex !== index) {
+        onReorder(index, toIndex);
+      }
+    } else if (!isDragging.current) {
+      // 检测是否是左滑
+      const deltaX = e.changedTouches[0].clientX - (e.target.touchStartX || 0);
+      if (deltaX < -80) {
+        // 左滑逻辑由父组件处理
+      }
+    }
+    
+    isDragging.current = false;
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  return (
+    <div className="entry-list">
+      {entries.map((entry, index) => (
+        <div
+          key={entry.id}
+          data-entry-id={entry.id}
+          className={`entry-card ${draggingId === entry.id ? 'dragging' : ''} ${dragOverId === entry.id ? 'drag-over' : ''}`}
+          onClick={() => !isDragging.current && onEntryClick(entry)}
+          onTouchStart={(e) => { e.target.touchStartX = e.touches[0].clientX; handleTouchStart(e, entry, index); onLongPress.start(e, entry); }}
+          onTouchMove={(e) => handleTouchMove(e, index)}
+          onTouchEnd={(e) => { handleTouchEnd(e, entry, index); onLongPress.end(); }}
+          onTouchCancel={() => { clearTimeout(longPressTimer.current); isDragging.current = false; setDraggingId(null); onLongPress.end(); }}
+        >
+          {draggingId === entry.id && <div className="drag-handle">≡</div>}
+          <div className="entry-icon">{entry.isFolder ? '📁' : '📄'}</div>
+          <div className="entry-info">
+            <h3>{entry.title}{entry.linkable && <span className="star-badge">⭐</span>}</h3>
+            <p>{entry.summary}</p>
+          </div>
+          <span className="entry-arrow">›</span>
+        </div>
+      ))}
+    </div>
   );
 };
 
@@ -412,12 +571,40 @@ export default function App() {
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [currentFont, setCurrentFont] = useState("'Noto Serif SC', serif");
+  const [currentFontSize, setCurrentFontSize] = useState('16px');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const longPressTimer = useRef(null);
   const editorRef = useRef(null);
+  const autoSaveTimer = useRef(null);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
+  // 自动保存
   useEffect(() => { saveToStorage(data); }, [data]);
+  
+  // 实时保存编辑内容
+  useEffect(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    if (!isReadOnly && currentEntry && viewMode === 'single') {
+      autoSaveTimer.current = setTimeout(() => {
+        const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: editContent });
+        setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
+      }, 500);
+    }
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [editContent, isReadOnly, currentEntry, viewMode]);
+
+  // 监听键盘
+  useEffect(() => {
+    const handleResize = () => {
+      const vh = window.innerHeight;
+      const visualVh = window.visualViewport?.height || vh;
+      setKeyboardHeight(Math.max(0, vh - visualVh));
+    };
+    window.visualViewport?.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, []);
+
   const allTitlesMap = useMemo(() => collectAllLinkableTitles(data.books), [data.books]);
   useEffect(() => { if (currentBook) { const updated = data.books.find(b => b.id === currentBook.id); if (updated) setCurrentBook(updated); } }, [data]);
   useEffect(() => { if (currentEntry && currentBook) { const found = findEntryById(currentBook.entries, currentEntry.id); if (found) setCurrentEntry(found); } }, [currentBook]);
@@ -454,17 +641,13 @@ export default function App() {
         ];
       }
       setContextMenu({ isOpen: true, position, options });
-    }, 500);
+    }, 600);
   };
   const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
 
   const handleBookSelect = (book) => { setCurrentBook(book); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); };
   
   const handleBackToShelf = () => {
-    if (!isReadOnly && currentEntry) {
-      if (viewMode === 'single') handleSaveContent();
-      else if (viewMode === 'merged') handleSaveMergedContent();
-    }
     setSlideAnimation('slide-out');
     setTimeout(() => { setCurrentBook(null); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); setIsSidebarOpen(false); setJumpHistory([]); setSlideAnimation(''); }, 200);
   };
@@ -474,15 +657,11 @@ export default function App() {
     setNavigationStack(prev => [...prev, currentEntry].filter(Boolean));
     setCurrentEntry(entry);
     if (entry.isFolder || entry.children?.length > 0) setViewMode('list');
-    else { setViewMode('single'); setEditContent(entry.content || ''); }
+    else { setViewMode('single'); setEditContent(entry.content || ''); setIsReadOnly(true); }
     setTimeout(() => setSlideAnimation(''), 250);
   };
 
   const handleBack = () => {
-    if (!isReadOnly && currentEntry) {
-      if (viewMode === 'single') handleSaveContent();
-      else if (viewMode === 'merged') handleSaveMergedContent();
-    }
     setSlideAnimation('slide-out');
     setTimeout(() => {
       if (navigationStack.length > 0) {
@@ -534,13 +713,7 @@ export default function App() {
     }
   }, [currentBook, currentEntry, navigationStack, viewMode, data.books, initMergedContents]);
 
-  const handleSaveContent = () => {
-    if (!currentEntry || !currentBook) return;
-    const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: editContent });
-    setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
-  };
-
-  const handleSaveMergedContent = () => {
+  const handleSaveMergedContent = useCallback(() => {
     if (!currentEntry || !currentBook) return;
     let updatedEntries = currentBook.entries;
     mergedContents.forEach(item => {
@@ -552,7 +725,16 @@ export default function App() {
       }
     });
     setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
-  };
+  }, [currentEntry, currentBook, mergedContents]);
+
+  // 合并视图实时保存
+  useEffect(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    if (!isReadOnly && viewMode === 'merged') {
+      autoSaveTimer.current = setTimeout(handleSaveMergedContent, 500);
+    }
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [mergedContents, isReadOnly, viewMode, handleSaveMergedContent]);
 
   const handleMergedContentChange = (index, field, value) => {
     setMergedContents(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
@@ -586,6 +768,12 @@ export default function App() {
     }
   };
 
+  const handleReorder = (fromIndex, toIndex) => {
+    const parentId = currentEntry?.id || null;
+    const updatedEntries = reorderEntries(currentBook.entries, parentId, fromIndex, toIndex);
+    setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
+  };
+
   const handleFormat = (type) => {
     const textarea = editorRef.current;
     if (!textarea) return;
@@ -602,28 +790,20 @@ export default function App() {
     setTimeout(() => { textarea.focus(); textarea.setSelectionRange(newCursorPos, newCursorPos); }, 0);
   };
 
-  const handleBullet = () => {
-    if (viewMode === 'merged') handleAddMergedEntry();
-    else {
-      const textarea = editorRef.current;
-      if (!textarea) return;
-      const start = textarea.selectionStart;
-      const newText = editContent.substring(0, start) + '\n\n·' + editContent.substring(start);
-      setEditContent(newText);
-      setTimeout(() => { textarea.focus(); textarea.setSelectionRange(start + 3, start + 3); }, 0);
-    }
+  const handleIndentAll = () => {
+    setEditContent(addIndentToAll(editContent));
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target.result;
+      try {
+        const compressed = await compressImage(file, 600);
         const start = editorRef.current?.selectionStart || editContent.length;
-        setEditContent(editContent.substring(0, start) + `\n[IMG:${imageData}]\n` + editContent.substring(start));
-      };
-      reader.readAsDataURL(file);
+        setEditContent(editContent.substring(0, start) + `\n[IMG:${compressed}]\n` + editContent.substring(start));
+      } catch (err) {
+        console.error('图片处理失败:', err);
+      }
     }
     e.target.value = '';
   };
@@ -634,22 +814,6 @@ export default function App() {
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
     if (deltaX > 80 && deltaY < 50 && (currentEntry || navigationStack.length > 0)) handleBack();
-  };
-
-  // 词条滑动
-  const handleEntryTouchStart = (e, entry) => { touchStartX.current = e.touches[0].clientX; touchStartY.current = e.touches[0].clientY; handleLongPressStart(e, 'entry', entry); };
-  const handleEntryTouchEnd = (e, entry) => {
-    handleLongPressEnd();
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-    const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-    if (deltaX < -80 && deltaY < 50 && (entry.isFolder || entry.children?.length > 0)) {
-      setSlideAnimation('slide-in');
-      setNavigationStack(prev => [...prev, currentEntry].filter(Boolean));
-      setCurrentEntry(entry);
-      setViewMode('merged');
-      initMergedContents(entry);
-      setTimeout(() => setSlideAnimation(''), 250);
-    }
   };
 
   const currentEntries = currentEntry?.children || currentBook?.entries || [];
@@ -707,7 +871,7 @@ export default function App() {
           <div className="breadcrumb"><span className="book-name">{currentBook.title}</span>{currentEntry && <><span className="separator">/</span><span className="current-title">{currentEntry.title}</span></>}</div>
           <div className="top-right">
             {(viewMode === 'single' || viewMode === 'merged') && (
-              <div className="read-mode-toggle" onClick={() => { if (!isReadOnly) { if (viewMode === 'single') handleSaveContent(); else if (viewMode === 'merged') handleSaveMergedContent(); } setIsReadOnly(!isReadOnly); }}>
+              <div className="read-mode-toggle" onClick={() => setIsReadOnly(!isReadOnly)}>
                 <span className={`toggle-label ${isReadOnly ? 'active' : ''}`}>阅读</span>
                 <div className={`toggle-switch ${!isReadOnly ? 'edit-mode' : ''}`}><div className="toggle-knob" /></div>
                 <span className={`toggle-label ${!isReadOnly ? 'active' : ''}`}>编辑</span>
@@ -730,27 +894,38 @@ export default function App() {
         
         <main className={`content-area ${slideAnimation}`}>
           {viewMode === 'list' && (
-            <div className="entry-list">
+            <>
               {currentEntry && <div className="list-header"><h1>{currentEntry.title}</h1>{currentEntry.summary && <p className="summary">{currentEntry.summary}</p>}</div>}
-              <p className="swipe-hint">💡 左滑合并视图 · 右滑返回 · 长按编辑</p>
-              {currentEntries.map(entry => (
-                <div key={entry.id} className="entry-card" onClick={() => handleEntryClick(entry)}
-                  onTouchStart={(e) => handleEntryTouchStart(e, entry)} onTouchEnd={(e) => handleEntryTouchEnd(e, entry)} onTouchMove={handleLongPressEnd}
-                  onMouseDown={(e) => handleLongPressStart(e, 'entry', entry)} onMouseUp={handleLongPressEnd} onMouseLeave={handleLongPressEnd}>
-                  <div className="entry-icon">{entry.isFolder ? '📁' : '📄'}</div>
-                  <div className="entry-info"><h3>{entry.title}{entry.linkable && <span className="star-badge">⭐</span>}</h3><p>{entry.summary}</p></div>
-                  <span className="entry-arrow">›</span>
-                </div>
-              ))}
+              <p className="swipe-hint">💡 长按拖拽排序 · 左滑合并视图 · 右滑返回</p>
+              <DraggableEntryList
+                entries={currentEntries}
+                onEntryClick={handleEntryClick}
+                onLongPress={{ start: (e, entry) => handleLongPressStart(e, 'entry', entry), end: handleLongPressEnd }}
+                onReorder={handleReorder}
+                currentEntry={currentEntry}
+              />
               {currentEntries.length === 0 && <div className="empty-state"><span>✨</span><p>点击右下角添加</p></div>}
-            </div>
+            </>
           )}
           
           {viewMode === 'single' && currentEntry && (
             <div className="single-view">
-              <div className="content-header"><h1>{currentEntry.title}</h1>{!isReadOnly && <button className="edit-meta-btn" onClick={() => { setEditingEntry(currentEntry); setShowEntryModal(true); }}>✏️</button>}</div>
-              {isReadOnly ? <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} />
-                : <textarea ref={editorRef} className="content-editor" value={editContent} onChange={e => setEditContent(e.target.value)} placeholder="开始书写..." style={{ fontFamily: currentFont }} />}
+              <div className="content-header">
+                <h1>{currentEntry.title}</h1>
+                {!isReadOnly && <button className="edit-meta-btn" onClick={() => { setEditingEntry(currentEntry); setShowEntryModal(true); }}>✏️</button>}
+              </div>
+              {isReadOnly ? (
+                <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} fontSize={currentFontSize} />
+              ) : (
+                <textarea 
+                  ref={editorRef} 
+                  className="content-editor full" 
+                  value={editContent} 
+                  onChange={e => setEditContent(e.target.value)} 
+                  placeholder="开始书写..." 
+                  style={{ fontFamily: currentFont, fontSize: currentFontSize }}
+                />
+              )}
             </div>
           )}
           
@@ -761,8 +936,8 @@ export default function App() {
                 <div className="merged-content-read">
                   {getAllChildContent(currentEntry).map((item, idx) => (
                     <div key={item.id} className="merged-section">
-                      <div className="section-title" onClick={() => handleSidebarSelect(item)}><span className="section-bullet">·</span>{item.title}</div>
-                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} />
+                      <div className="section-title" onClick={() => handleSidebarSelect(item)}><span className="section-bullet">•</span>{item.title}</div>
+                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} fontSize={currentFontSize} />
                       {idx < getAllChildContent(currentEntry).length - 1 && <div className="section-divider" />}
                     </div>
                   ))}
@@ -771,8 +946,18 @@ export default function App() {
                 <div className="merged-content-edit">
                   {mergedContents.map((item, idx) => (
                     <div key={item.id} className="merged-edit-section">
-                      <div className="merged-edit-header"><span className="section-bullet">·</span><input type="text" value={item.title} onChange={e => handleMergedContentChange(idx, 'title', e.target.value)} className="merged-title-input" />{item.isNew && <span className="new-badge">新</span>}</div>
-                      <textarea value={item.content} onChange={e => handleMergedContentChange(idx, 'content', e.target.value)} className="merged-content-textarea" style={{ fontFamily: currentFont }} />
+                      <div className="merged-edit-header">
+                        <span className="section-bullet">•</span>
+                        <input type="text" value={item.title} onChange={e => handleMergedContentChange(idx, 'title', e.target.value)} className="merged-title-input" />
+                        {item.isNew && <span className="new-badge">新</span>}
+                      </div>
+                      <textarea 
+                        value={item.content} 
+                        onChange={e => handleMergedContentChange(idx, 'content', e.target.value)} 
+                        className="merged-content-textarea" 
+                        style={{ fontFamily: currentFont, fontSize: currentFontSize }}
+                        placeholder="内容..."
+                      />
                     </div>
                   ))}
                   <button className="add-merged-entry-btn" onClick={handleAddMergedEntry}>+ 添加词条</button>
@@ -789,9 +974,9 @@ export default function App() {
           </>
         )}
         
-        {isEditing && <EditorToolbar onBullet={handleBullet} onFormatClick={() => setShowFormatMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} />}
+        {isEditing && <EditorToolbar onIndentAll={handleIndentAll} onFormatClick={() => setShowFormatMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} keyboardHeight={keyboardHeight} />}
         <TextFormatMenu isOpen={showFormatMenu} onClose={() => setShowFormatMenu(false)} onFormat={handleFormat} />
-        <FontMenu isOpen={showFontMenu} onClose={() => setShowFontMenu(false)} onSelect={setCurrentFont} currentFont={currentFont} />
+        <FontMenu isOpen={showFontMenu} onClose={() => setShowFontMenu(false)} onSelectFont={setCurrentFont} onSelectSize={setCurrentFontSize} currentFont={currentFont} currentSize={currentFontSize} />
       </div>
       
       <EntryModal isOpen={showEntryModal} onClose={() => { setShowEntryModal(false); setEditingEntry(null); }} onSave={editingEntry ? handleUpdateEntry : handleAddEntry} editingEntry={editingEntry} parentTitle={currentEntry?.title} isFolder={isCreatingFolder} />
@@ -861,7 +1046,7 @@ html,body,#root{height:100%;overflow:hidden}
 .info-cover{width:70px;height:95px;border-radius:6px;overflow:hidden;background:linear-gradient(135deg,#2D3047,#1a1a2e);display:flex;align-items:center;justify-content:center;font-size:2rem;flex-shrink:0}
 .info-cover img{width:100%;height:100%;object-fit:cover}
 .info-details{flex:1;font-size:.85rem;color:#666;display:flex;flex-direction:column;gap:6px}
-.content-area{padding:20px 16px;padding-bottom:100px;flex:1;overflow-y:auto}
+.content-area{padding:20px 16px;padding-bottom:80px;flex:1;overflow-y:auto}
 .content-area.slide-in{animation:slideIn .25s ease-out}
 .content-area.slide-out{animation:slideOut .2s ease-in}
 @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
@@ -869,10 +1054,13 @@ html,body,#root{height:100%;overflow:hidden}
 .list-header{margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid rgba(45,48,71,.1)}
 .list-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:1.6rem;color:#2D3047;margin-bottom:6px}
 .list-header .summary{color:#8B7355;font-size:.9rem}
-.swipe-hint{font-size:.8rem;color:#999;text-align:center;margin-bottom:16px}
+.swipe-hint{font-size:.75rem;color:#aaa;text-align:center;margin-bottom:16px}
 .entry-list{display:flex;flex-direction:column;gap:10px}
-.entry-card{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:12px;cursor:pointer;box-shadow:0 2px 8px rgba(45,48,71,.08);user-select:none}
+.entry-card{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:12px;cursor:pointer;box-shadow:0 2px 8px rgba(45,48,71,.08);user-select:none;transition:transform .15s,box-shadow .15s}
 .entry-card:active{transform:scale(.98)}
+.entry-card.dragging{opacity:.8;transform:scale(1.02);box-shadow:0 8px 24px rgba(45,48,71,.2);z-index:10}
+.entry-card.drag-over{border:2px dashed #8B7355}
+.drag-handle{position:absolute;left:8px;color:#ccc;font-size:1.2rem}
 .entry-icon{font-size:1.3rem}
 .entry-info{flex:1;min-width:0}
 .entry-info h3{font-size:1rem;color:#2D3047;margin-bottom:2px;font-weight:600;display:flex;align-items:center;gap:6px}
@@ -881,35 +1069,36 @@ html,body,#root{height:100%;overflow:hidden}
 .entry-arrow{font-size:1.3rem;color:#ccc}
 .empty-state{text-align:center;padding:60px 20px;color:#999}
 .empty-state span{font-size:2.5rem;display:block;margin-bottom:12px}
-.single-view,.merged-view{background:#fff;border-radius:16px;padding:24px 20px;box-shadow:0 4px 20px rgba(45,48,71,.1)}
-.content-header{margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid rgba(45,48,71,.1);display:flex;justify-content:space-between;align-items:center}
-.content-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:1.6rem;color:#2D3047}
+.single-view,.merged-view{background:#fff;border-radius:16px;padding:24px 20px;box-shadow:0 4px 20px rgba(45,48,71,.1);min-height:calc(100vh - 200px)}
+.content-header{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(45,48,71,.1);display:flex;justify-content:space-between;align-items:center}
+.content-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:1.5rem;color:#2D3047}
 .edit-meta-btn{background:none;border:1px solid #ddd;padding:6px 12px;border-radius:6px;font-size:.8rem;color:#666;cursor:pointer}
 .merged-header{text-align:center;display:block}
 .merged-hint{color:#8B7355;font-size:.85rem;margin-top:6px}
-.content-body{line-height:1.9;color:#333;font-size:.95rem}
+.content-body{line-height:1.9;color:#333}
 .content-line{margin-bottom:.4em;text-align:justify}
 .content-image{margin:16px 0}
-.content-image img{max-width:100%;border-radius:8px}
+.content-image img{max-width:100%;border-radius:8px;max-height:300px;object-fit:contain}
 .keyword{color:#2D3047;font-weight:600}
 .keyword.linked{color:#8B7355;background:linear-gradient(180deg,transparent 60%,rgba(139,115,85,.2) 60%)}
 .keyword.clickable{cursor:pointer}
-.content-editor{width:100%;min-height:300px;padding:16px;border:2px solid rgba(45,48,71,.1);border-radius:12px;font-family:'Noto Serif SC',serif;font-size:.95rem;line-height:1.9;resize:vertical}
-.content-editor:focus{outline:none;border-color:#8B7355}
-.merged-content-read .merged-section{margin-bottom:28px}
-.section-title{font-size:1.2rem;color:#2D3047;font-weight:600;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:6px}
-.section-bullet{font-size:1.8rem;line-height:1;color:#8B7355}
-.section-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(45,48,71,.2),transparent);margin:28px 0}
-.merged-content-edit{display:flex;flex-direction:column;gap:20px}
-.merged-edit-section{background:rgba(45,48,71,.03);border-radius:12px;padding:16px}
+.content-editor{width:100%;min-height:50vh;padding:0;border:none;font-family:'Noto Serif SC',serif;line-height:1.9;resize:none;background:transparent}
+.content-editor:focus{outline:none}
+.content-editor.full{min-height:calc(100vh - 280px)}
+.merged-content-read .merged-section{margin-bottom:32px}
+.section-title{font-size:1.1rem;color:#2D3047;font-weight:600;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.section-bullet{font-size:1.5rem;color:#8B7355}
+.section-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(45,48,71,.15),transparent);margin:32px 0}
+.merged-content-edit{display:flex;flex-direction:column;gap:24px}
+.merged-edit-section{padding-bottom:20px;border-bottom:1px solid rgba(45,48,71,.1)}
 .merged-edit-header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
-.merged-title-input{flex:1;background:none;border:none;border-bottom:1px solid rgba(45,48,71,.2);font-size:1.1rem;font-weight:600;color:#2D3047;padding:4px 0;font-family:'Noto Serif SC',serif}
-.merged-title-input:focus{outline:none;border-color:#8B7355}
+.merged-title-input{flex:1;background:none;border:none;font-size:1.1rem;font-weight:600;color:#2D3047;padding:4px 0;font-family:'Noto Serif SC',serif}
+.merged-title-input:focus{outline:none}
 .new-badge{font-size:.7rem;background:#8B7355;color:#fff;padding:2px 6px;border-radius:4px}
-.merged-content-textarea{width:100%;min-height:120px;padding:12px;border:1px solid rgba(45,48,71,.1);border-radius:8px;font-family:'Noto Serif SC',serif;font-size:.95rem;line-height:1.8;resize:vertical}
-.merged-content-textarea:focus{outline:none;border-color:#8B7355}
-.add-merged-entry-btn{background:none;border:2px dashed rgba(45,48,71,.2);border-radius:12px;padding:16px;color:#8B7355;font-size:.9rem;cursor:pointer}
-.add-merged-entry-btn:active{background:rgba(139,115,85,.1)}
+.merged-content-textarea{width:100%;min-height:100px;padding:0;border:none;font-family:'Noto Serif SC',serif;line-height:1.8;resize:none;background:transparent}
+.merged-content-textarea:focus{outline:none}
+.add-merged-entry-btn{background:none;border:1px dashed rgba(45,48,71,.2);border-radius:8px;padding:12px;color:#8B7355;font-size:.9rem;cursor:pointer}
+.add-merged-entry-btn:active{background:rgba(139,115,85,.05)}
 .fab{position:fixed;right:24px;bottom:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2D3047,#1a1a2e);border:none;color:#f4e4c1;font-size:1.8rem;cursor:pointer;box-shadow:0 4px 20px rgba(45,48,71,.4);display:flex;align-items:center;justify-content:center;z-index:50}
 .fab:active,.fab.active{transform:scale(.9)}
 .fab.active{background:linear-gradient(135deg,#8B7355,#6B5335)}
@@ -919,17 +1108,24 @@ html,body,#root{height:100%;overflow:hidden}
 .add-menu-item{display:flex;align-items:center;gap:12px;padding:16px 20px;cursor:pointer}
 .add-menu-item:active{background:#f5f5f5}
 .add-menu-item:not(:last-child){border-bottom:1px solid #eee}
-.editor-toolbar-bottom{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;padding:12px 20px;background:rgba(255,255,255,.98);border-top:1px solid rgba(45,48,71,.1);z-index:50}
-.editor-toolbar-bottom button{background:none;border:none;font-size:1.2rem;padding:12px 20px;cursor:pointer;color:#2D3047;border-radius:8px;font-weight:600}
-.editor-toolbar-bottom button:active{background:rgba(45,48,71,.1)}
+.editor-toolbar-bottom{position:fixed;left:0;right:0;display:flex;justify-content:space-around;padding:8px 16px;background:rgba(250,248,243,.98);border-top:1px solid rgba(45,48,71,.08);z-index:50}
+.editor-toolbar-bottom button{background:none;border:none;font-size:1rem;padding:8px 16px;cursor:pointer;color:#2D3047;border-radius:6px}
+.editor-toolbar-bottom button:active{background:rgba(45,48,71,.08)}
 .format-menu-overlay{position:fixed;inset:0;z-index:58}
-.format-menu,.font-menu{position:fixed;left:16px;right:16px;bottom:70px;background:#fff;border-radius:16px;box-shadow:0 -4px 30px rgba(0,0,0,.15);z-index:59;padding:16px;animation:slideUp .2s}
+.format-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:12px}
 .format-row{display:flex;justify-content:space-around}
-.format-row button{width:48px;height:48px;border-radius:12px;border:1px solid #ddd;background:#fff;font-size:1.1rem;cursor:pointer}
+.format-row button{width:44px;height:44px;border-radius:10px;border:1px solid #eee;background:#fff;font-size:1rem;cursor:pointer}
 .format-row button:active{background:#f5f5f5}
-.font-menu{max-height:300px;overflow-y:auto}
-.font-item{padding:16px;border-radius:8px;cursor:pointer;font-size:1rem}
-.font-item:active,.font-item.active{background:rgba(139,115,85,.1);color:#8B7355}
+.font-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:16px;max-height:60vh;overflow-y:auto}
+.font-section{margin-bottom:16px}
+.font-section:last-child{margin-bottom:0}
+.font-section-title{font-size:.8rem;color:#999;margin-bottom:8px}
+.font-options{display:flex;flex-wrap:wrap;gap:8px}
+.font-item{padding:10px 14px;border-radius:8px;cursor:pointer;font-size:.9rem;background:#f5f5f5}
+.font-item:active,.font-item.active{background:rgba(139,115,85,.15);color:#8B7355}
+.size-options{display:flex;gap:8px}
+.size-btn{padding:8px 16px;border-radius:8px;border:1px solid #eee;background:#fff;font-size:.85rem;cursor:pointer}
+.size-btn:active,.size-btn.active{background:rgba(139,115,85,.15);color:#8B7355;border-color:#8B7355}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-content{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto}
 .modal-content h3{font-family:'ZCOOL XiaoWei',serif;font-size:1.3rem;color:#2D3047;margin-bottom:16px;text-align:center}
@@ -962,7 +1158,7 @@ html,body,#root{height:100%;overflow:hidden}
 .context-item.danger{color:#e53935}
 .context-item:not(:last-child){border-bottom:1px solid #eee}
 .context-icon{font-size:1.1rem}
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-thumb{background:rgba(45,48,71,.2);border-radius:3px}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:rgba(45,48,71,.15);border-radius:2px}
 .sidebar ::-webkit-scrollbar-thumb{background:rgba(244,228,193,.2)}
 `;
