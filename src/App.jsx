@@ -21,7 +21,7 @@ const initialData = {
                 { id: 'ten-days', title: '十日旧约', summary: '创世传说', linkable: true, isFolder: false,
                   content: '　　在时间的起点，女神独自漂浮于无尽的寂静之中。\n\n　　第一日，她从心火中分离出【火的守望】。\n　　第二日，从泪水中分离出【水的祝福】。', children: [] },
                 { id: 'war-gods', title: '战争双神', summary: '胜利与牺牲', linkable: true, isFolder: false,
-                  content: '　　**胜利者·凯洛斯**，身披金色战甲。\n\n　　*牺牲者·赛莲娜*，身着银色长袍。', children: [] }
+                  content: '　　<b>胜利者·凯洛斯</b>，身披金色战甲。\n\n　　<i>牺牲者·赛莲娜</i>，身着银色长袍。', children: [] }
               ]
             },
             {
@@ -95,13 +95,24 @@ const findEntryById = (entries, id) => {
   return null;
 };
 
-const getAllChildContent = (entry) => {
+const getAllChildContent = (entry, allEntries) => {
   let contents = [];
   const collect = (e) => {
+    if (!e) return;
     if (e.content || !e.isFolder) contents.push(e);
-    if (e.children?.length) e.children.forEach(child => collect(child));
+    if (e.children?.length) {
+      e.children.forEach(child => {
+        const found = findEntryById(allEntries, child.id) || child;
+        collect(found);
+      });
+    }
   };
-  if (entry.children?.length) entry.children.forEach(child => collect(child));
+  if (entry?.children?.length) {
+    entry.children.forEach(child => {
+      const found = findEntryById(allEntries, child.id) || child;
+      collect(found);
+    });
+  }
   return contents;
 };
 
@@ -129,21 +140,23 @@ const deleteEntryFromTree = (entries, entryId) => {
   });
 };
 
-const reorderEntries = (entries, parentId, fromIndex, toIndex) => {
-  if (!parentId) {
+const reorderEntriesInParent = (entries, parentId, fromIndex, toIndex) => {
+  if (parentId === null) {
     const newEntries = [...entries];
     const [moved] = newEntries.splice(fromIndex, 1);
     newEntries.splice(toIndex, 0, moved);
     return newEntries;
   }
   return entries.map(entry => {
-    if (entry.id === parentId) {
+    if (entry.id === parentId && entry.children) {
       const newChildren = [...entry.children];
       const [moved] = newChildren.splice(fromIndex, 1);
       newChildren.splice(toIndex, 0, moved);
       return { ...entry, children: newChildren };
     }
-    if (entry.children?.length) return { ...entry, children: reorderEntries(entry.children, parentId, fromIndex, toIndex) };
+    if (entry.children?.length) {
+      return { ...entry, children: reorderEntriesInParent(entry.children, parentId, fromIndex, toIndex) };
+    }
     return entry;
   });
 };
@@ -151,7 +164,10 @@ const reorderEntries = (entries, parentId, fromIndex, toIndex) => {
 const countWords = (entries) => {
   let count = 0;
   const traverse = (items) => items.forEach(item => {
-    if (item.content) count += item.content.replace(/\s/g, '').length;
+    if (item.content) {
+      const text = item.content.replace(/<[^>]+>/g, '').replace(/\[IMG:[^\]]+\]/g, '');
+      count += text.replace(/\s/g, '').length;
+    }
     if (item.children?.length) traverse(item.children);
   });
   traverse(entries);
@@ -168,8 +184,7 @@ const countEntries = (entries) => {
   return count;
 };
 
-// 压缩图片
-const compressImage = (file, maxWidth = 800) => {
+const compressImage = (file, maxWidth = 600) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -185,7 +200,7 @@ const compressImage = (file, maxWidth = 800) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
       };
       img.src = e.target.result;
     };
@@ -193,7 +208,6 @@ const compressImage = (file, maxWidth = 800) => {
   });
 };
 
-// 一键段首缩进
 const addIndentToAll = (text) => {
   return text.split('\n').map(line => {
     if (line.trim() && !line.startsWith('　　') && !line.startsWith('[IMG:')) {
@@ -203,8 +217,24 @@ const addIndentToAll = (text) => {
   }).join('\n');
 };
 
-// ==================== 富文本渲染 ====================
-const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily, fontSize }) => {
+// 编辑模式下将图片显示为[图片]
+const contentForEdit = (content) => {
+  if (!content) return '';
+  return content.replace(/\[IMG:[^\]]+\]/g, '[图片]');
+};
+
+// 保存时将[图片]还原（保持原有图片数据）
+const restoreImages = (newContent, originalContent) => {
+  if (!originalContent) return newContent;
+  const imgMatches = originalContent.match(/\[IMG:[^\]]+\]/g) || [];
+  let imgIndex = 0;
+  return newContent.replace(/\[图片\]/g, () => {
+    return imgMatches[imgIndex++] || '[图片]';
+  });
+};
+
+// ==================== 富文本渲染（阅读模式）====================
+const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, fontFamily, fontSize }) => {
   const processedContent = useMemo(() => {
     if (!content) return [];
     return content.split('\n').map((line, lineIndex) => {
@@ -215,7 +245,8 @@ const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, is
       
       const parts = [];
       let key = 0;
-      const regex = /(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(__([^_]+)__)|(~~([^~]+)~~)|【([^】]+)】/g;
+      // 支持HTML标签和【关键词】
+      const regex = /(<b>([^<]+)<\/b>)|(<i>([^<]+)<\/i>)|(<u>([^<]+)<\/u>)|(<s>([^<]+)<\/s>)|(<big>([^<]+)<\/big>)|(<small>([^<]+)<\/small>)|【([^】]+)】/g;
       let lastIdx = 0, match;
       
       while ((match = regex.exec(line)) !== null) {
@@ -224,14 +255,16 @@ const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, is
         else if (match[3]) parts.push(<em key={key++}>{match[4]}</em>);
         else if (match[5]) parts.push(<u key={key++}>{match[6]}</u>);
         else if (match[7]) parts.push(<del key={key++}>{match[8]}</del>);
-        else if (match[9]) {
-          const keyword = match[9];
+        else if (match[9]) parts.push(<span key={key++} style={{ fontSize: '1.2em' }}>{match[10]}</span>);
+        else if (match[11]) parts.push(<span key={key++} style={{ fontSize: '0.85em' }}>{match[12]}</span>);
+        else if (match[13]) {
+          const keyword = match[13];
           const linkTargets = allTitlesMap.get(keyword);
           const isLinked = !!linkTargets?.length;
           parts.push(
-            <span key={key++} className={`keyword ${isLinked ? 'linked' : ''} ${isReadOnly && isLinked ? 'clickable' : ''}`}
+            <span key={key++} className={`keyword ${isLinked ? 'linked clickable' : ''}`}
               onClick={() => {
-                if (isReadOnly && isLinked) {
+                if (isLinked) {
                   const target = linkTargets.find(t => t.bookId === currentBookId) || linkTargets[0];
                   onLinkClick(keyword, target.bookId, target.entry.id);
                 }
@@ -243,7 +276,7 @@ const ContentRenderer = ({ content, allTitlesMap, currentBookId, onLinkClick, is
       if (lastIdx < line.length) parts.push(<span key={key++}>{line.slice(lastIdx)}</span>);
       return <p key={lineIndex} className="content-line" style={{ fontFamily, fontSize }}>{parts.length > 0 ? parts : line || '\u00A0'}</p>;
     });
-  }, [content, allTitlesMap, currentBookId, onLinkClick, isReadOnly, fontFamily, fontSize]);
+  }, [content, allTitlesMap, currentBookId, onLinkClick, fontFamily, fontSize]);
   return <div className="content-body">{processedContent}</div>;
 };
 
@@ -371,24 +404,28 @@ const BookModal = ({ isOpen, onClose, onSave, editingBook }) => {
 };
 
 // ==================== 格式菜单 ====================
-const TextFormatMenu = ({ isOpen, onClose, onFormat }) => {
+const TextFormatMenu = ({ isOpen, onClose, activeFormats, onToggleFormat }) => {
   if (!isOpen) return null;
   return (
     <>
       <div className="format-menu-overlay" onClick={onClose} />
       <div className="format-menu">
         <div className="format-row">
-          <button onClick={() => { onFormat('bold'); onClose(); }} title="加粗"><strong>B</strong></button>
-          <button onClick={() => { onFormat('italic'); onClose(); }} title="斜体"><em>I</em></button>
-          <button onClick={() => { onFormat('underline'); onClose(); }} title="下划线"><u>U</u></button>
-          <button onClick={() => { onFormat('strike'); onClose(); }} title="删除线"><del>S</del></button>
+          <button className={activeFormats.bold ? 'active' : ''} onClick={() => onToggleFormat('bold')} title="加粗"><strong>B</strong></button>
+          <button className={activeFormats.italic ? 'active' : ''} onClick={() => onToggleFormat('italic')} title="斜体"><em>I</em></button>
+          <button className={activeFormats.underline ? 'active' : ''} onClick={() => onToggleFormat('underline')} title="下划线"><u>U</u></button>
+          <button className={activeFormats.strike ? 'active' : ''} onClick={() => onToggleFormat('strike')} title="删除线"><del>S</del></button>
+        </div>
+        <div className="format-row size-row">
+          <button className={activeFormats.small ? 'active' : ''} onClick={() => onToggleFormat('small')} title="小字">小</button>
+          <button className={activeFormats.big ? 'active' : ''} onClick={() => onToggleFormat('big')} title="大字">大</button>
         </div>
       </div>
     </>
   );
 };
 
-const FontMenu = ({ isOpen, onClose, onSelectFont, onSelectSize, currentFont, currentSize }) => {
+const FontMenu = ({ isOpen, onClose, onSelectFont, currentFont }) => {
   const fonts = [
     { name: '默认', value: "'Noto Serif SC', serif" },
     { name: '宋体', value: "'Songti SC', 'SimSun', serif" },
@@ -396,152 +433,114 @@ const FontMenu = ({ isOpen, onClose, onSelectFont, onSelectSize, currentFont, cu
     { name: '楷体', value: "'Kaiti SC', 'KaiTi', serif" },
     { name: '仿宋', value: "'FangSong SC', 'FangSong', serif" },
   ];
-  const sizes = [
-    { name: '小', value: '14px' },
-    { name: '中', value: '16px' },
-    { name: '大', value: '18px' },
-    { name: '特大', value: '20px' },
-  ];
   if (!isOpen) return null;
   return (
     <>
       <div className="format-menu-overlay" onClick={onClose} />
       <div className="font-menu">
-        <div className="font-section">
-          <p className="font-section-title">字体</p>
-          <div className="font-options">
-            {fonts.map(f => (
-              <div key={f.value} className={`font-item ${currentFont === f.value ? 'active' : ''}`} 
-                onClick={() => { onSelectFont(f.value); }} style={{ fontFamily: f.value }}>{f.name}</div>
-            ))}
-          </div>
-        </div>
-        <div className="font-section">
-          <p className="font-section-title">字号</p>
-          <div className="size-options">
-            {sizes.map(s => (
-              <button key={s.value} className={`size-btn ${currentSize === s.value ? 'active' : ''}`}
-                onClick={() => { onSelectSize(s.value); }}>{s.name}</button>
-            ))}
-          </div>
+        <p className="font-section-title">选择字体</p>
+        <div className="font-options">
+          {fonts.map(f => (
+            <div key={f.value} className={`font-item ${currentFont === f.value ? 'active' : ''}`} 
+              onClick={() => { onSelectFont(f.value); onClose(); }} style={{ fontFamily: f.value }}>{f.name}</div>
+          ))}
         </div>
       </div>
     </>
   );
 };
 
-// ==================== 编辑工具栏（紧凑版） ====================
-const EditorToolbar = ({ onIndentAll, onFormatClick, onFontClick, onImageUpload, keyboardHeight }) => {
+// ==================== 编辑工具栏 ====================
+const EditorToolbar = ({ onIndentAll, onFormatClick, onFontClick, onImageUpload, activeFormats }) => {
   const imageInputRef = useRef(null);
+  const hasActiveFormat = activeFormats.bold || activeFormats.italic || activeFormats.underline || activeFormats.strike || activeFormats.big || activeFormats.small;
   return (
-    <div className="editor-toolbar-bottom" style={{ bottom: keyboardHeight }}>
+    <div className="editor-toolbar-bottom">
       <button onClick={onIndentAll} title="全文缩进">↵</button>
-      <button onClick={onFormatClick} title="文字格式">A</button>
-      <button onClick={onFontClick} title="字体字号">T</button>
+      <button onClick={onFormatClick} className={hasActiveFormat ? 'has-active' : ''} title="文字格式">A</button>
+      <button onClick={onFontClick} title="字体">T</button>
       <button onClick={() => imageInputRef.current?.click()} title="插入图片">🖼</button>
       <input ref={imageInputRef} type="file" accept="image/*" onChange={onImageUpload} style={{ display: 'none' }} />
     </div>
   );
 };
 
-// ==================== FAB ====================
-const AddMenu = ({ isOpen, onClose, onAddEntry, onAddFolder }) => {
+// ==================== FAB菜单 ====================
+const AddMenu = ({ isOpen, onClose, onAddEntry, onAddFolder, onReorderMode }) => {
   if (!isOpen) return null;
   return (
     <>
       <div className="add-menu-overlay" onClick={onClose} />
       <div className="add-menu">
-        <div className="add-menu-item" onClick={() => { onAddFolder(); onClose(); }}><span>📁</span><span>新建分类文件夹</span></div>
+        <div className="add-menu-item" onClick={() => { onReorderMode(); onClose(); }}><span>↕️</span><span>调整排序</span></div>
+        <div className="add-menu-item" onClick={() => { onAddFolder(); onClose(); }}><span>📁</span><span>新建分类</span></div>
         <div className="add-menu-item" onClick={() => { onAddEntry(); onClose(); }}><span>📄</span><span>新建词条</span></div>
       </div>
     </>
   );
 };
 
-// ==================== 可拖拽词条列表 ====================
-const DraggableEntryList = ({ entries, onEntryClick, onLongPress, onReorder, currentEntry }) => {
-  const [draggingId, setDraggingId] = useState(null);
-  const [dragOverId, setDragOverId] = useState(null);
+// ==================== 排序模式列表 ====================
+const ReorderList = ({ entries, onReorder, onExit }) => {
+  const [draggingIndex, setDraggingIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+  const listRef = useRef(null);
   const dragStartY = useRef(0);
-  const dragStartIndex = useRef(0);
-  const longPressTimer = useRef(null);
-  const isDragging = useRef(false);
 
-  const handleTouchStart = (e, entry, index) => {
+  const handleTouchStart = (e, index) => {
     dragStartY.current = e.touches[0].clientY;
-    dragStartIndex.current = index;
-    
-    longPressTimer.current = setTimeout(() => {
-      isDragging.current = true;
-      setDraggingId(entry.id);
-      if (navigator.vibrate) navigator.vibrate(50);
-    }, 500);
+    setDraggingIndex(index);
+    if (navigator.vibrate) navigator.vibrate(30);
   };
 
-  const handleTouchMove = (e, index) => {
-    if (!isDragging.current) {
-      const deltaY = Math.abs(e.touches[0].clientY - dragStartY.current);
-      if (deltaY > 10) {
-        clearTimeout(longPressTimer.current);
-      }
-      return;
-    }
-    
+  const handleTouchMove = (e) => {
+    if (draggingIndex === null) return;
     e.preventDefault();
     const touch = e.touches[0];
-    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-    const entryCard = elements.find(el => el.classList.contains('entry-card'));
-    if (entryCard) {
-      const entryId = entryCard.dataset.entryId;
-      if (entryId && entryId !== draggingId) {
-        setDragOverId(entryId);
+    const items = listRef.current?.querySelectorAll('.reorder-item');
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+      const rect = items[i].getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        setOverIndex(i);
+        break;
       }
     }
   };
 
-  const handleTouchEnd = (e, entry, index) => {
-    clearTimeout(longPressTimer.current);
-    
-    if (isDragging.current && dragOverId) {
-      const toIndex = entries.findIndex(en => en.id === dragOverId);
-      if (toIndex !== -1 && toIndex !== index) {
-        onReorder(index, toIndex);
-      }
-    } else if (!isDragging.current) {
-      // 检测是否是左滑
-      const deltaX = e.changedTouches[0].clientX - (e.target.touchStartX || 0);
-      if (deltaX < -80) {
-        // 左滑逻辑由父组件处理
-      }
+  const handleTouchEnd = () => {
+    if (draggingIndex !== null && overIndex !== null && draggingIndex !== overIndex) {
+      onReorder(draggingIndex, overIndex);
     }
-    
-    isDragging.current = false;
-    setDraggingId(null);
-    setDragOverId(null);
+    setDraggingIndex(null);
+    setOverIndex(null);
   };
 
   return (
-    <div className="entry-list">
-      {entries.map((entry, index) => (
-        <div
-          key={entry.id}
-          data-entry-id={entry.id}
-          className={`entry-card ${draggingId === entry.id ? 'dragging' : ''} ${dragOverId === entry.id ? 'drag-over' : ''}`}
-          onClick={() => !isDragging.current && onEntryClick(entry)}
-          onTouchStart={(e) => { e.target.touchStartX = e.touches[0].clientX; handleTouchStart(e, entry, index); onLongPress.start(e, entry); }}
-          onTouchMove={(e) => handleTouchMove(e, index)}
-          onTouchEnd={(e) => { handleTouchEnd(e, entry, index); onLongPress.end(); }}
-          onTouchCancel={() => { clearTimeout(longPressTimer.current); isDragging.current = false; setDraggingId(null); onLongPress.end(); }}
-        >
-          {draggingId === entry.id && <div className="drag-handle">≡</div>}
-          <div className="entry-icon">{entry.isFolder ? '📁' : '📄'}</div>
-          <div className="entry-info">
-            <h3>{entry.title}{entry.linkable && <span className="star-badge">⭐</span>}</h3>
-            <p>{entry.summary}</p>
+    <div className="reorder-mode">
+      <div className="reorder-header">
+        <h3>调整排序</h3>
+        <button className="done-btn" onClick={onExit}>完成</button>
+      </div>
+      <p className="reorder-hint">长按书签拖动调整顺序</p>
+      <div className="reorder-list" ref={listRef} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+        {entries.map((entry, index) => (
+          <div
+            key={entry.id}
+            className={`reorder-item ${draggingIndex === index ? 'dragging' : ''} ${overIndex === index && draggingIndex !== index ? 'over' : ''}`}
+            onTouchStart={(e) => handleTouchStart(e, index)}
+          >
+            <div className="reorder-content">
+              <span className="reorder-icon">{entry.isFolder ? '📁' : '📄'}</span>
+              <span className="reorder-title">{entry.title}</span>
+            </div>
+            <div className="bookmark-tab">
+              <span>≡</span>
+            </div>
           </div>
-          <span className="entry-arrow">›</span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 };
@@ -557,6 +556,7 @@ export default function App() {
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [navigationStack, setNavigationStack] = useState([]);
   const [editContent, setEditContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
   const [mergedContents, setMergedContents] = useState([]);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showBookModal, setShowBookModal] = useState(false);
@@ -571,48 +571,50 @@ export default function App() {
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [currentFont, setCurrentFont] = useState("'Noto Serif SC', serif");
-  const [currentFontSize, setCurrentFontSize] = useState('16px');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, strike: false, big: false, small: false });
+  const [isReorderMode, setIsReorderMode] = useState(false);
   const longPressTimer = useRef(null);
   const editorRef = useRef(null);
   const autoSaveTimer = useRef(null);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
-  // 自动保存
   useEffect(() => { saveToStorage(data); }, [data]);
   
-  // 实时保存编辑内容
+  // 实时保存
   useEffect(() => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     if (!isReadOnly && currentEntry && viewMode === 'single') {
       autoSaveTimer.current = setTimeout(() => {
-        const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: editContent });
+        const restoredContent = restoreImages(editContent, originalContent);
+        const updatedEntries = updateEntryInTree(currentBook.entries, currentEntry.id, { content: restoredContent });
         setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
       }, 500);
     }
     return () => clearTimeout(autoSaveTimer.current);
   }, [editContent, isReadOnly, currentEntry, viewMode]);
 
-  // 监听键盘
-  useEffect(() => {
-    const handleResize = () => {
-      const vh = window.innerHeight;
-      const visualVh = window.visualViewport?.height || vh;
-      setKeyboardHeight(Math.max(0, vh - visualVh));
-    };
-    window.visualViewport?.addEventListener('resize', handleResize);
-    return () => window.visualViewport?.removeEventListener('resize', handleResize);
-  }, []);
-
   const allTitlesMap = useMemo(() => collectAllLinkableTitles(data.books), [data.books]);
-  useEffect(() => { if (currentBook) { const updated = data.books.find(b => b.id === currentBook.id); if (updated) setCurrentBook(updated); } }, [data]);
-  useEffect(() => { if (currentEntry && currentBook) { const found = findEntryById(currentBook.entries, currentEntry.id); if (found) setCurrentEntry(found); } }, [currentBook]);
+  
+  useEffect(() => { 
+    if (currentBook) { 
+      const updated = data.books.find(b => b.id === currentBook.id); 
+      if (updated) setCurrentBook(updated); 
+    } 
+  }, [data]);
+  
+  useEffect(() => { 
+    if (currentEntry && currentBook) { 
+      const found = findEntryById(currentBook.entries, currentEntry.id); 
+      if (found) setCurrentEntry(found); 
+    } 
+  }, [currentBook]);
 
   const initMergedContents = useCallback((entry) => {
-    const items = getAllChildContent(entry);
+    if (!entry || !currentBook) return;
+    const items = getAllChildContent(entry, currentBook.entries);
     setMergedContents(items.map(item => ({ id: item.id, title: item.title, content: item.content || '', isNew: false })));
-  }, []);
+  }, [currentBook]);
 
   // 长按
   const handleLongPressStart = (e, type, item) => {
@@ -641,7 +643,7 @@ export default function App() {
         ];
       }
       setContextMenu({ isOpen: true, position, options });
-    }, 600);
+    }, 500);
   };
   const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
 
@@ -649,7 +651,7 @@ export default function App() {
   
   const handleBackToShelf = () => {
     setSlideAnimation('slide-out');
-    setTimeout(() => { setCurrentBook(null); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); setIsSidebarOpen(false); setJumpHistory([]); setSlideAnimation(''); }, 200);
+    setTimeout(() => { setCurrentBook(null); setCurrentEntry(null); setViewMode('list'); setNavigationStack([]); setIsSidebarOpen(false); setJumpHistory([]); setSlideAnimation(''); setIsReorderMode(false); }, 200);
   };
 
   const handleEntryClick = (entry) => {
@@ -657,7 +659,12 @@ export default function App() {
     setNavigationStack(prev => [...prev, currentEntry].filter(Boolean));
     setCurrentEntry(entry);
     if (entry.isFolder || entry.children?.length > 0) setViewMode('list');
-    else { setViewMode('single'); setEditContent(entry.content || ''); setIsReadOnly(true); }
+    else { 
+      setViewMode('single'); 
+      setOriginalContent(entry.content || '');
+      setEditContent(contentForEdit(entry.content || '')); 
+      setIsReadOnly(true); 
+    }
     setTimeout(() => setSlideAnimation(''), 250);
   };
 
@@ -671,6 +678,7 @@ export default function App() {
         setViewMode(prev ? 'list' : 'list');
       } else { setCurrentEntry(null); setViewMode('list'); }
       setSlideAnimation('');
+      setIsReorderMode(false);
     }, 200);
   };
 
@@ -679,7 +687,16 @@ export default function App() {
       const last = jumpHistory[jumpHistory.length - 1];
       setJumpHistory(prev => prev.slice(0, -1));
       const book = data.books.find(b => b.id === last.bookId);
-      if (book) { setCurrentBook(book); setNavigationStack(last.navStack); setCurrentEntry(last.entry); setViewMode(last.viewMode); if (last.entry?.content) setEditContent(last.entry.content); }
+      if (book) { 
+        setCurrentBook(book); 
+        setNavigationStack(last.navStack); 
+        setCurrentEntry(last.entry); 
+        setViewMode(last.viewMode); 
+        if (last.entry?.content) {
+          setOriginalContent(last.entry.content);
+          setEditContent(contentForEdit(last.entry.content));
+        }
+      }
     }
   };
 
@@ -689,7 +706,11 @@ export default function App() {
       setNavigationStack(path.slice(0, -1));
       setCurrentEntry(entry);
       if (entry.isFolder || entry.children?.length > 0) setViewMode('list');
-      else { setViewMode('single'); setEditContent(entry.content || ''); }
+      else { 
+        setViewMode('single'); 
+        setOriginalContent(entry.content || '');
+        setEditContent(contentForEdit(entry.content || '')); 
+      }
     }
     setIsSidebarOpen(false);
   };
@@ -705,9 +726,16 @@ export default function App() {
         const targetEntry = path[path.length - 1];
         setNavigationStack(path.slice(0, -1));
         setCurrentEntry(targetEntry);
-        if (targetEntry.isFolder && targetEntry.linkable) { setViewMode('merged'); initMergedContents(targetEntry); }
-        else if (targetEntry.isFolder) setViewMode('list');
-        else { setViewMode('single'); setEditContent(targetEntry.content || ''); }
+        if (targetEntry.isFolder && targetEntry.linkable) { 
+          setViewMode('merged'); 
+          setTimeout(() => initMergedContents(targetEntry), 0);
+        } else if (targetEntry.isFolder) {
+          setViewMode('list');
+        } else { 
+          setViewMode('single'); 
+          setOriginalContent(targetEntry.content || '');
+          setEditContent(contentForEdit(targetEntry.content || '')); 
+        }
       }
       setTimeout(() => setSlideAnimation(''), 250);
     }
@@ -727,7 +755,6 @@ export default function App() {
     setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
   }, [currentEntry, currentBook, mergedContents]);
 
-  // 合并视图实时保存
   useEffect(() => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     if (!isReadOnly && viewMode === 'merged') {
@@ -770,24 +797,57 @@ export default function App() {
 
   const handleReorder = (fromIndex, toIndex) => {
     const parentId = currentEntry?.id || null;
-    const updatedEntries = reorderEntries(currentBook.entries, parentId, fromIndex, toIndex);
+    const updatedEntries = reorderEntriesInParent(currentBook.entries, parentId, fromIndex, toIndex);
     setData(prev => ({ ...prev, books: prev.books.map(b => b.id === currentBook.id ? { ...b, entries: updatedEntries } : b) }));
   };
 
-  const handleFormat = (type) => {
-    const textarea = editorRef.current;
-    if (!textarea) return;
-    const start = textarea.selectionStart, end = textarea.selectionEnd;
-    const text = editContent, selectedText = text.substring(start, end);
-    let newText = text, newCursorPos = end;
-    const wrappers = { 'bold': ['**', '**'], 'italic': ['*', '*'], 'underline': ['__', '__'], 'strike': ['~~', '~~'] };
-    if (wrappers[type]) {
-      const [pre, post] = wrappers[type];
-      if (selectedText) { newText = text.substring(0, start) + pre + selectedText + post + text.substring(end); newCursorPos = end + pre.length + post.length; }
-      else { newText = text.substring(0, start) + pre + post + text.substring(end); newCursorPos = start + pre.length; }
+  const handleToggleFormat = (type) => {
+    setActiveFormats(prev => {
+      const newFormats = { ...prev };
+      // 大小字互斥
+      if (type === 'big' && !prev.big) newFormats.small = false;
+      if (type === 'small' && !prev.small) newFormats.big = false;
+      newFormats[type] = !prev[type];
+      return newFormats;
+    });
+  };
+
+  // 输入时应用格式
+  const handleEditorChange = (e) => {
+    const newValue = e.target.value;
+    const oldValue = editContent;
+    
+    // 检测是否是新输入的字符
+    if (newValue.length > oldValue.length) {
+      const diff = newValue.length - oldValue.length;
+      const insertPos = e.target.selectionStart - diff;
+      const insertedText = newValue.slice(insertPos, insertPos + diff);
+      
+      // 应用激活的格式
+      if (Object.values(activeFormats).some(v => v)) {
+        let formattedText = insertedText;
+        if (activeFormats.bold) formattedText = `<b>${formattedText}</b>`;
+        if (activeFormats.italic) formattedText = `<i>${formattedText}</i>`;
+        if (activeFormats.underline) formattedText = `<u>${formattedText}</u>`;
+        if (activeFormats.strike) formattedText = `<s>${formattedText}</s>`;
+        if (activeFormats.big) formattedText = `<big>${formattedText}</big>`;
+        if (activeFormats.small) formattedText = `<small>${formattedText}</small>`;
+        
+        const newContent = oldValue.slice(0, insertPos) + formattedText + oldValue.slice(insertPos);
+        setEditContent(newContent);
+        
+        // 调整光标位置
+        setTimeout(() => {
+          if (editorRef.current) {
+            const newPos = insertPos + formattedText.length;
+            editorRef.current.setSelectionRange(newPos, newPos);
+          }
+        }, 0);
+        return;
+      }
     }
-    setEditContent(newText);
-    setTimeout(() => { textarea.focus(); textarea.setSelectionRange(newCursorPos, newCursorPos); }, 0);
+    
+    setEditContent(newValue);
   };
 
   const handleIndentAll = () => {
@@ -799,8 +859,10 @@ export default function App() {
     if (file) {
       try {
         const compressed = await compressImage(file, 600);
-        const start = editorRef.current?.selectionStart || editContent.length;
-        setEditContent(editContent.substring(0, start) + `\n[IMG:${compressed}]\n` + editContent.substring(start));
+        const imgTag = `[IMG:${compressed}]`;
+        const newOriginal = originalContent + `\n${imgTag}\n`;
+        setOriginalContent(newOriginal);
+        setEditContent(editContent + '\n[图片]\n');
       } catch (err) {
         console.error('图片处理失败:', err);
       }
@@ -808,12 +870,26 @@ export default function App() {
     e.target.value = '';
   };
 
-  // 全局滑动
+  // 滑动手势
   const handleContentTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; touchStartY.current = e.touches[0].clientY; };
   const handleContentTouchEnd = (e) => {
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
     if (deltaX > 80 && deltaY < 50 && (currentEntry || navigationStack.length > 0)) handleBack();
+  };
+
+  // 词条左滑进入合并视图
+  const handleEntrySwipe = (entry, deltaX) => {
+    if (deltaX < -80 && (entry.isFolder || entry.children?.length > 0)) {
+      setSlideAnimation('slide-in');
+      setNavigationStack(prev => [...prev, currentEntry].filter(Boolean));
+      setCurrentEntry(entry);
+      setViewMode('merged');
+      setTimeout(() => {
+        initMergedContents(entry);
+      }, 50);
+      setTimeout(() => setSlideAnimation(''), 250);
+    }
   };
 
   const currentEntries = currentEntry?.children || currentBook?.entries || [];
@@ -823,13 +899,16 @@ export default function App() {
   if (!currentBook) {
     return (
       <div className="app bookshelf-view">
-        <header className="bookshelf-header"><h1>灵感穹顶</h1><p className="subtitle">收集你的创作宇宙</p></header>
+        <header className="bookshelf-header">
+          <h1>灵感穹顶</h1>
+          <p className="subtitle">拾起每一颗星星</p>
+          <p className="subtitle">便能拥有属于你的宇宙</p>
+        </header>
         <div className="bookshelf">
           {data.books.map(book => (
             <div key={book.id} className="book-card" style={{ '--book-color': book.color }}
               onClick={() => handleBookSelect(book)}
-              onTouchStart={(e) => handleLongPressStart(e, 'book', book)} onTouchEnd={handleLongPressEnd} onTouchMove={handleLongPressEnd}
-              onMouseDown={(e) => handleLongPressStart(e, 'book', book)} onMouseUp={handleLongPressEnd} onMouseLeave={handleLongPressEnd}>
+              onTouchStart={(e) => handleLongPressStart(e, 'book', book)} onTouchEnd={handleLongPressEnd} onTouchMove={handleLongPressEnd}>
               <div className="book-spine"></div>
               <div className="book-cover">
                 {book.coverImage ? <img src={book.coverImage} alt={book.title} className="cover-image" /> : <span className="book-emoji">{book.cover}</span>}
@@ -893,19 +972,38 @@ export default function App() {
         )}
         
         <main className={`content-area ${slideAnimation}`}>
-          {viewMode === 'list' && (
+          {viewMode === 'list' && !isReorderMode && (
             <>
               {currentEntry && <div className="list-header"><h1>{currentEntry.title}</h1>{currentEntry.summary && <p className="summary">{currentEntry.summary}</p>}</div>}
-              <p className="swipe-hint">💡 长按拖拽排序 · 左滑合并视图 · 右滑返回</p>
-              <DraggableEntryList
-                entries={currentEntries}
-                onEntryClick={handleEntryClick}
-                onLongPress={{ start: (e, entry) => handleLongPressStart(e, 'entry', entry), end: handleLongPressEnd }}
-                onReorder={handleReorder}
-                currentEntry={currentEntry}
-              />
+              <p className="swipe-hint">💡 左滑合并视图 · 右滑返回 · 长按编辑</p>
+              <div className="entry-list">
+                {currentEntries.map((entry) => {
+                  let touchX = 0;
+                  return (
+                    <div
+                      key={entry.id}
+                      className="entry-card"
+                      onClick={() => handleEntryClick(entry)}
+                      onTouchStart={(e) => { touchX = e.touches[0].clientX; handleLongPressStart(e, 'entry', entry); }}
+                      onTouchMove={handleLongPressEnd}
+                      onTouchEnd={(e) => { handleLongPressEnd(); const dx = e.changedTouches[0].clientX - touchX; handleEntrySwipe(entry, dx); }}
+                    >
+                      <div className="entry-icon">{entry.isFolder ? '📁' : '📄'}</div>
+                      <div className="entry-info">
+                        <h3>{entry.title}{entry.linkable && <span className="star-badge">⭐</span>}</h3>
+                        <p>{entry.summary}</p>
+                      </div>
+                      <span className="entry-arrow">›</span>
+                    </div>
+                  );
+                })}
+              </div>
               {currentEntries.length === 0 && <div className="empty-state"><span>✨</span><p>点击右下角添加</p></div>}
             </>
+          )}
+
+          {viewMode === 'list' && isReorderMode && (
+            <ReorderList entries={currentEntries} onReorder={handleReorder} onExit={() => setIsReorderMode(false)} />
           )}
           
           {viewMode === 'single' && currentEntry && (
@@ -915,15 +1013,15 @@ export default function App() {
                 {!isReadOnly && <button className="edit-meta-btn" onClick={() => { setEditingEntry(currentEntry); setShowEntryModal(true); }}>✏️</button>}
               </div>
               {isReadOnly ? (
-                <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} fontSize={currentFontSize} />
+                <ContentRenderer content={currentEntry.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} fontSize="16px" />
               ) : (
                 <textarea 
                   ref={editorRef} 
                   className="content-editor full" 
                   value={editContent} 
-                  onChange={e => setEditContent(e.target.value)} 
+                  onChange={handleEditorChange} 
                   placeholder="开始书写..." 
-                  style={{ fontFamily: currentFont, fontSize: currentFontSize }}
+                  style={{ fontFamily: currentFont }}
                 />
               )}
             </div>
@@ -934,11 +1032,11 @@ export default function App() {
               <div className="content-header merged-header"><h1>{currentEntry.title}</h1><p className="merged-hint">📖 合并视图</p></div>
               {isReadOnly ? (
                 <div className="merged-content-read">
-                  {getAllChildContent(currentEntry).map((item, idx) => (
+                  {getAllChildContent(currentEntry, currentBook.entries).map((item, idx, arr) => (
                     <div key={item.id} className="merged-section">
                       <div className="section-title" onClick={() => handleSidebarSelect(item)}><span className="section-bullet">•</span>{item.title}</div>
-                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} isReadOnly={true} fontFamily={currentFont} fontSize={currentFontSize} />
-                      {idx < getAllChildContent(currentEntry).length - 1 && <div className="section-divider" />}
+                      <ContentRenderer content={item.content} allTitlesMap={allTitlesMap} currentBookId={currentBook.id} onLinkClick={handleLinkClick} fontFamily={currentFont} fontSize="16px" />
+                      {idx < arr.length - 1 && <div className="section-divider" />}
                     </div>
                   ))}
                 </div>
@@ -955,7 +1053,7 @@ export default function App() {
                         value={item.content} 
                         onChange={e => handleMergedContentChange(idx, 'content', e.target.value)} 
                         className="merged-content-textarea" 
-                        style={{ fontFamily: currentFont, fontSize: currentFontSize }}
+                        style={{ fontFamily: currentFont }}
                         placeholder="内容..."
                       />
                     </div>
@@ -967,16 +1065,16 @@ export default function App() {
           )}
         </main>
         
-        {viewMode === 'list' && (
+        {viewMode === 'list' && !isReorderMode && (
           <>
             <button className={`fab ${showAddMenu ? 'active' : ''}`} onClick={() => setShowAddMenu(!showAddMenu)}><span style={{ transform: showAddMenu ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s' }}>+</span></button>
-            <AddMenu isOpen={showAddMenu} onClose={() => setShowAddMenu(false)} onAddEntry={() => { setEditingEntry(null); setIsCreatingFolder(false); setShowEntryModal(true); }} onAddFolder={() => { setEditingEntry(null); setIsCreatingFolder(true); setShowEntryModal(true); }} />
+            <AddMenu isOpen={showAddMenu} onClose={() => setShowAddMenu(false)} onAddEntry={() => { setEditingEntry(null); setIsCreatingFolder(false); setShowEntryModal(true); }} onAddFolder={() => { setEditingEntry(null); setIsCreatingFolder(true); setShowEntryModal(true); }} onReorderMode={() => setIsReorderMode(true)} />
           </>
         )}
         
-        {isEditing && <EditorToolbar onIndentAll={handleIndentAll} onFormatClick={() => setShowFormatMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} keyboardHeight={keyboardHeight} />}
-        <TextFormatMenu isOpen={showFormatMenu} onClose={() => setShowFormatMenu(false)} onFormat={handleFormat} />
-        <FontMenu isOpen={showFontMenu} onClose={() => setShowFontMenu(false)} onSelectFont={setCurrentFont} onSelectSize={setCurrentFontSize} currentFont={currentFont} currentSize={currentFontSize} />
+        {isEditing && <EditorToolbar onIndentAll={handleIndentAll} onFormatClick={() => setShowFormatMenu(true)} onFontClick={() => setShowFontMenu(true)} onImageUpload={handleImageUpload} activeFormats={activeFormats} />}
+        <TextFormatMenu isOpen={showFormatMenu} onClose={() => setShowFormatMenu(false)} activeFormats={activeFormats} onToggleFormat={handleToggleFormat} />
+        <FontMenu isOpen={showFontMenu} onClose={() => setShowFontMenu(false)} onSelectFont={setCurrentFont} currentFont={currentFont} />
       </div>
       
       <EntryModal isOpen={showEntryModal} onClose={() => { setShowEntryModal(false); setEditingEntry(null); }} onSave={editingEntry ? handleUpdateEntry : handleAddEntry} editingEntry={editingEntry} parentTitle={currentEntry?.title} isFolder={isCreatingFolder} />
@@ -994,8 +1092,8 @@ html,body,#root{height:100%;overflow:hidden}
 .app{height:100%;font-family:'Noto Serif SC',serif;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .bookshelf-view{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f0f23 100%);padding:60px 20px;min-height:100%}
 .bookshelf-header{text-align:center;margin-bottom:50px}
-.bookshelf-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:2.5rem;color:#f4e4c1;letter-spacing:.3em;text-shadow:0 0 40px rgba(244,228,193,.3);margin-bottom:12px}
-.subtitle{color:rgba(244,228,193,.5);font-size:.9rem;letter-spacing:.2em}
+.bookshelf-header h1{font-family:'ZCOOL XiaoWei',serif;font-size:2.5rem;color:#f4e4c1;letter-spacing:.3em;text-shadow:0 0 40px rgba(244,228,193,.3);margin-bottom:16px}
+.subtitle{color:rgba(244,228,193,.6);font-size:.95rem;letter-spacing:.15em;line-height:1.8}
 .bookshelf{display:flex;flex-wrap:wrap;gap:30px;justify-content:center;max-width:1200px;margin:0 auto}
 .book-card{position:relative;width:140px;cursor:pointer;perspective:1000px;user-select:none}
 .book-card:active{transform:scale(.95)}
@@ -1056,11 +1154,8 @@ html,body,#root{height:100%;overflow:hidden}
 .list-header .summary{color:#8B7355;font-size:.9rem}
 .swipe-hint{font-size:.75rem;color:#aaa;text-align:center;margin-bottom:16px}
 .entry-list{display:flex;flex-direction:column;gap:10px}
-.entry-card{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:12px;cursor:pointer;box-shadow:0 2px 8px rgba(45,48,71,.08);user-select:none;transition:transform .15s,box-shadow .15s}
+.entry-card{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:12px;cursor:pointer;box-shadow:0 2px 8px rgba(45,48,71,.08);user-select:none;transition:transform .15s}
 .entry-card:active{transform:scale(.98)}
-.entry-card.dragging{opacity:.8;transform:scale(1.02);box-shadow:0 8px 24px rgba(45,48,71,.2);z-index:10}
-.entry-card.drag-over{border:2px dashed #8B7355}
-.drag-handle{position:absolute;left:8px;color:#ccc;font-size:1.2rem}
 .entry-icon{font-size:1.3rem}
 .entry-info{flex:1;min-width:0}
 .entry-info h3{font-size:1rem;color:#2D3047;margin-bottom:2px;font-weight:600;display:flex;align-items:center;gap:6px}
@@ -1082,7 +1177,7 @@ html,body,#root{height:100%;overflow:hidden}
 .keyword{color:#2D3047;font-weight:600}
 .keyword.linked{color:#8B7355;background:linear-gradient(180deg,transparent 60%,rgba(139,115,85,.2) 60%)}
 .keyword.clickable{cursor:pointer}
-.content-editor{width:100%;min-height:50vh;padding:0;border:none;font-family:'Noto Serif SC',serif;line-height:1.9;resize:none;background:transparent}
+.content-editor{width:100%;min-height:50vh;padding:0;border:none;font-family:'Noto Serif SC',serif;font-size:16px;line-height:1.9;resize:none;background:transparent}
 .content-editor:focus{outline:none}
 .content-editor.full{min-height:calc(100vh - 280px)}
 .merged-content-read .merged-section{margin-bottom:32px}
@@ -1095,7 +1190,7 @@ html,body,#root{height:100%;overflow:hidden}
 .merged-title-input{flex:1;background:none;border:none;font-size:1.1rem;font-weight:600;color:#2D3047;padding:4px 0;font-family:'Noto Serif SC',serif}
 .merged-title-input:focus{outline:none}
 .new-badge{font-size:.7rem;background:#8B7355;color:#fff;padding:2px 6px;border-radius:4px}
-.merged-content-textarea{width:100%;min-height:100px;padding:0;border:none;font-family:'Noto Serif SC',serif;line-height:1.8;resize:none;background:transparent}
+.merged-content-textarea{width:100%;min-height:100px;padding:0;border:none;font-family:'Noto Serif SC',serif;font-size:16px;line-height:1.8;resize:none;background:transparent}
 .merged-content-textarea:focus{outline:none}
 .add-merged-entry-btn{background:none;border:1px dashed rgba(45,48,71,.2);border-radius:8px;padding:12px;color:#8B7355;font-size:.9rem;cursor:pointer}
 .add-merged-entry-btn:active{background:rgba(139,115,85,.05)}
@@ -1108,24 +1203,36 @@ html,body,#root{height:100%;overflow:hidden}
 .add-menu-item{display:flex;align-items:center;gap:12px;padding:16px 20px;cursor:pointer}
 .add-menu-item:active{background:#f5f5f5}
 .add-menu-item:not(:last-child){border-bottom:1px solid #eee}
-.editor-toolbar-bottom{position:fixed;left:0;right:0;display:flex;justify-content:space-around;padding:8px 16px;background:rgba(250,248,243,.98);border-top:1px solid rgba(45,48,71,.08);z-index:50}
+.editor-toolbar-bottom{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;padding:8px 16px;background:rgba(250,248,243,.98);border-top:1px solid rgba(45,48,71,.08);z-index:50}
 .editor-toolbar-bottom button{background:none;border:none;font-size:1rem;padding:8px 16px;cursor:pointer;color:#2D3047;border-radius:6px}
 .editor-toolbar-bottom button:active{background:rgba(45,48,71,.08)}
+.editor-toolbar-bottom button.has-active{color:#8B7355;font-weight:bold}
 .format-menu-overlay{position:fixed;inset:0;z-index:58}
 .format-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:12px}
-.format-row{display:flex;justify-content:space-around}
+.format-row{display:flex;justify-content:space-around;margin-bottom:8px}
+.format-row:last-child{margin-bottom:0}
 .format-row button{width:44px;height:44px;border-radius:10px;border:1px solid #eee;background:#fff;font-size:1rem;cursor:pointer}
 .format-row button:active{background:#f5f5f5}
-.font-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:16px;max-height:60vh;overflow-y:auto}
-.font-section{margin-bottom:16px}
-.font-section:last-child{margin-bottom:0}
-.font-section-title{font-size:.8rem;color:#999;margin-bottom:8px}
+.format-row button.active{background:#8B7355;color:#fff;border-color:#8B7355}
+.size-row button{width:auto;padding:0 16px}
+.font-menu{position:fixed;left:16px;right:16px;bottom:60px;background:#fff;border-radius:12px;box-shadow:0 -4px 20px rgba(0,0,0,.1);z-index:59;padding:16px}
+.font-section-title{font-size:.8rem;color:#999;margin-bottom:12px}
 .font-options{display:flex;flex-wrap:wrap;gap:8px}
 .font-item{padding:10px 14px;border-radius:8px;cursor:pointer;font-size:.9rem;background:#f5f5f5}
 .font-item:active,.font-item.active{background:rgba(139,115,85,.15);color:#8B7355}
-.size-options{display:flex;gap:8px}
-.size-btn{padding:8px 16px;border-radius:8px;border:1px solid #eee;background:#fff;font-size:.85rem;cursor:pointer}
-.size-btn:active,.size-btn.active{background:rgba(139,115,85,.15);color:#8B7355;border-color:#8B7355}
+.reorder-mode{padding:0}
+.reorder-header{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid rgba(45,48,71,.1);margin-bottom:16px}
+.reorder-header h3{font-family:'ZCOOL XiaoWei',serif;font-size:1.3rem;color:#2D3047}
+.done-btn{background:#8B7355;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:.9rem;cursor:pointer}
+.reorder-hint{font-size:.8rem;color:#999;text-align:center;margin-bottom:16px}
+.reorder-list{display:flex;flex-direction:column;gap:8px}
+.reorder-item{display:flex;align-items:center;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(45,48,71,.08);transition:transform .15s,opacity .15s}
+.reorder-item.dragging{opacity:.6;transform:scale(.95)}
+.reorder-item.over{border:2px dashed #8B7355}
+.reorder-content{flex:1;display:flex;align-items:center;gap:12px;padding:14px 16px}
+.reorder-icon{font-size:1.2rem}
+.reorder-title{font-size:.95rem;color:#2D3047}
+.bookmark-tab{width:40px;height:100%;background:linear-gradient(135deg,#8B7355,#6B5335);display:flex;align-items:center;justify-content:center;color:#f4e4c1;font-size:1.2rem;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,8px 50%)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-content{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto}
 .modal-content h3{font-family:'ZCOOL XiaoWei',serif;font-size:1.3rem;color:#2D3047;margin-bottom:16px;text-align:center}
